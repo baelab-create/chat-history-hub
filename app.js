@@ -1,6 +1,21 @@
-import {unlockCatalog} from './vault.js?v=2';
+import {unlockCatalog,loadTitles,saveTitles} from './vault.js?v=2';
 const $=id=>document.getElementById(id);
 let items=[];
+let titles={};
+let titlesReady=true;
+const displayTitle=t=>Object.hasOwn(titles,t.id)?titles[t.id]:t.title;
+function editTitle(t,content){
+ const form=el('form','title-editor');const input=el('input');input.value=displayTitle(t);input.maxLength=300;input.required=true;input.setAttribute('aria-label','대화 제목 수정');
+ const buttons=el('div','title-editor-actions');const save=el('button','','저장');save.type='submit';const cancel=el('button','','취소');cancel.type='button';const restore=el('button','','원래 제목');restore.type='button';
+ const hint=el('p','edit-hint','이 브라우저에만 저장됩니다. ChatGPT 원본 제목은 바뀌지 않습니다.');const status=el('p','edit-status');status.setAttribute('role','status');
+ buttons.append(save,cancel,restore);form.append(input,buttons,hint,status);content.replaceWith(form);input.focus();input.select();
+ const close=()=>{form.replaceWith(content);content.focus()};cancel.onclick=close;restore.onclick=()=>{input.value=t.title;input.focus()};
+ input.oninput=()=>input.setCustomValidity('');form.onkeydown=e=>{if(e.key==='Escape'){e.preventDefault();close()}};
+ form.onsubmit=async e=>{e.preventDefault();const value=input.value.trim();if(!value){input.setCustomValidity('제목을 입력해 주세요.');input.reportValidity();return}save.disabled=true;cancel.disabled=true;restore.disabled=true;input.disabled=true;
+  try{const next={...titles};if(value===t.title)delete next[t.id];else next[t.id]=value;await saveTitles(next);titles=next;render()}
+  catch{status.textContent='저장하지 못했습니다. 브라우저의 저장 공간 설정을 확인해 주세요.';save.disabled=false;cancel.disabled=false;restore.disabled=false;input.disabled=false}
+ };
+}
 const dateFormat=new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit'});
 const timeFormat=new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',hour:'2-digit',minute:'2-digit',hour12:false});
 function el(tag,cls,text){const e=document.createElement(tag);if(cls)e.className=cls;if(text!==undefined)e.textContent=text;return e}
@@ -8,7 +23,7 @@ function validUrl(raw,kind){try{const u=new URL(raw);return kind==='web'?u.proto
 function render(){
  const q=$('query').value.trim().toLocaleLowerCase('ko');
  const from=$('from').value,to=$('to').value,project=$('project').value;
- const rows=items.filter(t=>(!q||t.title.toLocaleLowerCase('ko').includes(q))&&(!project||t.project===project)&&(!from||dateFormat.format(new Date(t.updatedAt*1000))>=from)&&(!to||dateFormat.format(new Date(t.updatedAt*1000))<=to)).sort((a,b)=>($('sort').value==='asc'?1:-1)*(a.updatedAt-b.updatedAt));
+ const rows=items.filter(t=>(!q||displayTitle(t).toLocaleLowerCase('ko').includes(q))&&(!project||t.project===project)&&(!from||dateFormat.format(new Date(t.updatedAt*1000))>=from)&&(!to||dateFormat.format(new Date(t.updatedAt*1000))<=to)).sort((a,b)=>($('sort').value==='asc'?1:-1)*(a.updatedAt-b.updatedAt));
  $('count').textContent=rows.length+'개 대화';$('results').replaceChildren();
  if(from&&to&&from>to){$('results').append(el('div','empty','시작일을 종료일 이전으로 선택해 주세요.'));return}
  if(!rows.length){$('results').append(el('div','empty','검색 결과가 없습니다.'));return}
@@ -17,8 +32,7 @@ function render(){
   const day=dateFormat.format(new Date(t.updatedAt*1000));
   if(day!==previousDay){const section=el('section','day-group');section.append(el('h2','day-heading',new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',year:'numeric',month:'long',day:'numeric',weekday:'long'}).format(new Date(t.updatedAt*1000))));group=el('div','rows');group.setAttribute('role','list');section.append(group);$('results').append(section);previousDay=day}
   const app=t.appUrl&&validUrl(t.appUrl,'app');const web=t.webUrl&&validUrl(t.webUrl,'web');
-  const row=el('div','row');row.setAttribute('role','listitem');const body=el('div');const content=el(app||web?'a':'span','title',t.title);
-  if(app||web){content.href=app?t.appUrl:t.webUrl;content.target='_blank';content.rel='noopener noreferrer';content.title=app?'이 PC의 앱에서 열기':'ChatGPT 웹에서 열기'}
+  const row=el('div','row');row.setAttribute('role','listitem');const body=el('div');const content=el('button','title',displayTitle(t));content.type='button';content.title='클릭하여 제목 수정';content.disabled=!titlesReady;content.onclick=()=>editTitle(t,content);
   const d=new Date(t.updatedAt*1000);const date=el('time','',timeFormat.format(d));date.dateTime=d.toISOString();date.title='마지막 수정일 · 한국 시간';
   const meta=el('div','meta');meta.append(el('span','tag',t.kind==='chatgpt'?'ChatGPT':'로컬 작업'),el('span','',t.project||'프로젝트 없음'));body.append(content,meta);
   const actions=el('div','actions');const actionLink=(label,url)=>{const a=el('a','',label);a.href=url;a.target='_blank';a.rel='noopener noreferrer';return a};
@@ -28,6 +42,7 @@ function render(){
 }
 async function load(){try{
  const data=await unlockCatalog();if(!Array.isArray(data.items))throw Error('대화 목록 형식을 확인할 수 없습니다.');
+ try{titles=await loadTitles()}catch{titlesReady=false;$('error').textContent='저장된 수정 제목을 불러오지 못했습니다. 기존 저장 내용을 보호하기 위해 제목 수정을 잠시 사용할 수 없습니다.';$('error').hidden=false}
  const map=new Map();for(const t of data.items){if(typeof t.id==='string'&&typeof t.title==='string'&&Number.isFinite(t.updatedAt)&&Math.abs(t.updatedAt)<8e12)map.set(t.id,{...t,project:typeof t.project==='string'?t.project:'프로젝트 없음'})}items=[...map.values()];
  $('total').textContent=items.length;$('coverage').textContent=data.coverage||'수집 범위 확인 필요';for(const p of [...new Set(items.map(t=>t.project))].sort())$('project').add(new Option(p,p));render();
 }catch(e){$('error').textContent=e.message;$('error').hidden=false;$('count').textContent='연결 확인 필요'}}

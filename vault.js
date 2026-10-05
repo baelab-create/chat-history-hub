@@ -1,9 +1,24 @@
 const decode64 = value => Uint8Array.from(atob(value), c => c.charCodeAt(0));
+let titleKey;
+const titleStorage='chat-history-hub:titles:v1';
+export async function loadTitles(){
+  const raw=localStorage.getItem(titleStorage);if(!raw)return {};
+  const saved=JSON.parse(raw);
+  const bytes=await crypto.subtle.decrypt({name:'AES-GCM',iv:decode64(saved.iv)},titleKey,decode64(saved.data));
+  return JSON.parse(new TextDecoder().decode(bytes));
+}
+export async function saveTitles(titles){
+  const iv=crypto.getRandomValues(new Uint8Array(12));
+  const bytes=await crypto.subtle.encrypt({name:'AES-GCM',iv},titleKey,new TextEncoder().encode(JSON.stringify(titles)));
+  const encode=bytes=>btoa(Array.from(new Uint8Array(bytes),b=>String.fromCharCode(b)).join(''));
+  localStorage.setItem(titleStorage,JSON.stringify({iv:encode(iv),data:encode(bytes)}));
+}
 export async function decryptCatalog(envelope, password) {
   if (envelope.version !== 1 || envelope.iterations !== 600000) throw new Error('지원하지 않는 목록 형식입니다.');
   const material = await crypto.subtle.importKey('raw', new TextEncoder().encode(password.trim()), 'PBKDF2', false, ['deriveKey']);
   const key = await crypto.subtle.deriveKey({name:'PBKDF2',hash:'SHA-256',salt:decode64(envelope.salt),iterations:envelope.iterations},material,{name:'AES-GCM',length:256},false,['decrypt']);
   const bytes = await crypto.subtle.decrypt({name:'AES-GCM',iv:decode64(envelope.iv),additionalData:new TextEncoder().encode('chat-history-hub:v1')},key,decode64(envelope.ciphertext));
+  titleKey=await crypto.subtle.deriveKey({name:'PBKDF2',hash:'SHA-256',salt:new TextEncoder().encode('chat-history-hub:local-titles:v1'),iterations:600000},material,{name:'AES-GCM',length:256},false,['encrypt','decrypt']);
   return JSON.parse(new TextDecoder().decode(bytes));
 }
 export function unlockCatalog() {
