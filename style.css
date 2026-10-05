@@ -3,3 +3,6 @@
 .unlock .show-password{flex-direction:row;align-items:center;margin-top:12px;gap:8px}.show-password input{height:16px;width:16px;margin:0}.unlock .password-help{font-size:12px;margin-bottom:0}
 button.title{display:block;text-align:left;border:0;background:transparent;padding:0;height:auto;border-radius:3px;width:100%;font-size:15px}.title:hover{text-decoration:underline;text-underline-offset:4px}.title-editor input{width:100%}.title-editor-actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:8px}.title-editor-actions button{height:32px;font-size:12px}.title-editor-actions button[type=submit]{background:#e3f4ef;color:#176e70;border-color:#c5e9df}.edit-hint,.edit-status{font-size:11px;line-height:1.6;margin:7px 0 0;color:#617e98}.edit-status{color:#a14c37}@media(max-width:560px){button.title{font-size:14px}}
 
+
+.services{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 10px}.services button[aria-pressed=true]{background:#19364f;color:white;border-color:#19364f}.service-note,.import-panel p{font-size:12px;color:#617e98;line-height:1.7}.service-note{margin:0 0 24px}.import-panel{margin-top:24px;color:#617e98;font-size:12px}.import-panel summary{cursor:pointer}.import-panel textarea{width:100%;min-height:120px;border:1px solid #cdd9e6;border-radius:7px;padding:10px;font:inherit}.import-panel button{margin-top:10px}
+

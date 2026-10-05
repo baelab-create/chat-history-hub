@@ -1,17 +1,17 @@
 const decode64 = value => Uint8Array.from(atob(value), c => c.charCodeAt(0));
 let titleKey;
 const titleStorage='chat-history-hub:titles:v1';
-export async function loadTitles(){
-  const raw=localStorage.getItem(titleStorage);if(!raw)return {};
+export async function loadTitles(storage=titleStorage){
+  const raw=localStorage.getItem(storage);if(!raw)return {};
   const saved=JSON.parse(raw);
   const bytes=await crypto.subtle.decrypt({name:'AES-GCM',iv:decode64(saved.iv)},titleKey,decode64(saved.data));
   return JSON.parse(new TextDecoder().decode(bytes));
 }
-export async function saveTitles(titles){
+export async function saveTitles(titles,storage=titleStorage){
   const iv=crypto.getRandomValues(new Uint8Array(12));
   const bytes=await crypto.subtle.encrypt({name:'AES-GCM',iv},titleKey,new TextEncoder().encode(JSON.stringify(titles)));
   const encode=bytes=>btoa(Array.from(new Uint8Array(bytes),b=>String.fromCharCode(b)).join(''));
-  localStorage.setItem(titleStorage,JSON.stringify({iv:encode(iv),data:encode(bytes)}));
+  localStorage.setItem(storage,JSON.stringify({iv:encode(iv),data:encode(bytes)}));
 }
 export async function decryptCatalog(envelope, password) {
   if (envelope.version !== 1 || envelope.iterations !== 600000) throw new Error('지원하지 않는 목록 형식입니다.');

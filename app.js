@@ -1,6 +1,24 @@
 import {unlockCatalog,loadTitles,saveTitles} from './vault.js?v=2';
 const $=id=>document.getElementById(id);
 let items=[];
+let selectedService='all';
+const serviceNames={chatgpt:'ChatGPT',gemini:'Gemini',claude:'Claude'};
+const serviceOf=t=>['gemini','claude'].includes(t.kind)?t.kind:'chatgpt';
+const extraStorage='chat-history-hub:extra-catalog:v1';
+let extraReady=true;
+function updateServices(){
+ $('services').replaceChildren();
+ for(const [id,name] of [['all','전체'],...Object.entries(serviceNames)]){
+ const button=el('button','',name+' '+items.filter(t=>id==='all'||serviceOf(t)===id).length);button.type='button';button.setAttribute('aria-pressed',String(selectedService===id));button.onclick=()=>{selectedService=id;$('project').value='';updateServices();render()};$('services').append(button);
+ }
+ $('total').textContent=items.length;
+}
+function normalizeExtra(t){
+ if(!t||!['gemini','claude'].includes(t.kind)||typeof t.title!=='string'||!t.title.trim())throw Error('목록의 서비스 또는 제목을 확인해 주세요.');
+ const u=new URL(t.webUrl);const host=t.kind==='gemini'?'gemini.google.com':'claude.ai';
+ if(u.protocol!=='https:'||u.hostname!==host||u.username||u.password||!(/^\/(app|chat|cowork)\/[a-zA-Z0-9_-]+$/.test(u.pathname)))throw Error('지원하지 않는 대화 주소입니다.');
+ return {id:t.kind+':'+u.pathname,kind:t.kind,title:t.title.trim().slice(0,1000),webUrl:u.origin+u.pathname,updatedAt:Number.isFinite(t.updatedAt)&&Math.abs(t.updatedAt)<8e12?t.updatedAt:null,project:'프로젝트 미확인',sourceDate:typeof t.sourceDate==='string'?t.sourceDate.slice(0,100):''};
+}
 let titles={};
 let titlesReady=true;
 const displayTitle=t=>Object.hasOwn(titles,t.id)?titles[t.id]:t.title;
@@ -19,22 +37,23 @@ function editTitle(t,content){
 const dateFormat=new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit'});
 const timeFormat=new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',hour:'2-digit',minute:'2-digit',hour12:false});
 function el(tag,cls,text){const e=document.createElement(tag);if(cls)e.className=cls;if(text!==undefined)e.textContent=text;return e}
-function validUrl(raw,kind){try{const u=new URL(raw);return kind==='web'?u.protocol==='https:'&&u.hostname==='chatgpt.com'&&!u.username&&!u.password:u.protocol==='codex:'&&u.hostname==='threads'&&/^\/[a-z0-9-]+$/i.test(u.pathname)&&!u.search&&!u.hash;}catch{return false}}
+function validUrl(raw,kind){try{const u=new URL(raw);return kind==='web'?u.protocol==='https:'&&['chatgpt.com','gemini.google.com','claude.ai'].includes(u.hostname)&&!u.username&&!u.password:u.protocol==='codex:'&&u.hostname==='threads'&&/^\/[a-z0-9-]+$/i.test(u.pathname)&&!u.search&&!u.hash;}catch{return false}}
 function render(){
  const q=$('query').value.trim().toLocaleLowerCase('ko');
  const from=$('from').value,to=$('to').value,project=$('project').value;
- const rows=items.filter(t=>(!q||displayTitle(t).toLocaleLowerCase('ko').includes(q))&&(!project||t.project===project)&&(!from||dateFormat.format(new Date(t.updatedAt*1000))>=from)&&(!to||dateFormat.format(new Date(t.updatedAt*1000))<=to)).sort((a,b)=>($('sort').value==='asc'?1:-1)*(a.updatedAt-b.updatedAt));
+ const rows=items.filter(t=>(selectedService==='all'||serviceOf(t)===selectedService)&&(!q||displayTitle(t).toLocaleLowerCase('ko').includes(q))&&(!project||t.project===project)&&(!(from||to)||Number.isFinite(t.updatedAt))&&(!from||dateFormat.format(new Date(t.updatedAt*1000))>=from)&&(!to||dateFormat.format(new Date(t.updatedAt*1000))<=to)).sort((a,b)=>{if(a.updatedAt===null)return b.updatedAt===null?0:1;if(b.updatedAt===null)return -1;return ($('sort').value==='asc'?1:-1)*(a.updatedAt-b.updatedAt)});
+ $('service-note').textContent=selectedService==='gemini'||selectedService==='claude'?'브라우저에서 가져온 목록입니다. 자동 갱신·다른 기기 동기화는 아직 연결되지 않았습니다. 정확한 날짜가 없는 항목은 날짜 필터에서 제외됩니다.':'제목을 눌러 수정할 수 있습니다. Gemini·Claude에서 가져온 목록은 현재 브라우저에만 저장됩니다.';
  $('count').textContent=rows.length+'개 대화';$('results').replaceChildren();
  if(from&&to&&from>to){$('results').append(el('div','empty','시작일을 종료일 이전으로 선택해 주세요.'));return}
- if(!rows.length){$('results').append(el('div','empty','검색 결과가 없습니다.'));return}
+ if(!rows.length){$('results').append(el('div','empty',items.some(t=>selectedService==='all'||serviceOf(t)===selectedService)?'검색 결과가 없습니다.':'아직 가져온 대화가 없습니다.'));return}
  let previousDay,group;
  for(const t of rows){
-  const day=dateFormat.format(new Date(t.updatedAt*1000));
-  if(day!==previousDay){const section=el('section','day-group');section.append(el('h2','day-heading',new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',year:'numeric',month:'long',day:'numeric',weekday:'long'}).format(new Date(t.updatedAt*1000))));group=el('div','rows');group.setAttribute('role','list');section.append(group);$('results').append(section);previousDay=day}
+  const day=t.updatedAt===null?'unknown':dateFormat.format(new Date(t.updatedAt*1000));
+  if(day!==previousDay){const section=el('section','day-group');section.append(el('h2','day-heading',day==='unknown'?'날짜 미확인':new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',year:'numeric',month:'long',day:'numeric',weekday:'long'}).format(new Date(t.updatedAt*1000))));group=el('div','rows');group.setAttribute('role','list');section.append(group);$('results').append(section);previousDay=day}
   const app=t.appUrl&&validUrl(t.appUrl,'app');const web=t.webUrl&&validUrl(t.webUrl,'web');
   const row=el('div','row');row.setAttribute('role','listitem');const body=el('div');const content=el('button','title',displayTitle(t));content.type='button';content.title='클릭하여 제목 수정';content.disabled=!titlesReady;content.onclick=()=>editTitle(t,content);
-  const d=new Date(t.updatedAt*1000);const date=el('time','',timeFormat.format(d));date.dateTime=d.toISOString();date.title='마지막 수정일 · 한국 시간';
-  const meta=el('div','meta');meta.append(el('span','tag',t.kind==='chatgpt'?'ChatGPT':'로컬 작업'),el('span','',t.project||'프로젝트 없음'));body.append(content,meta);
+  const d=t.updatedAt===null?null:new Date(t.updatedAt*1000);const date=el('time','',d?timeFormat.format(d):'—');if(d)date.dateTime=d.toISOString();date.title=d?'마지막 수정일 · 한국 시간':'정확한 날짜 미확인';
+  const meta=el('div','meta');meta.append(el('span','tag',serviceNames[t.kind]||'로컬 작업'),el('span','',t.project||'프로젝트 없음'));if(t.sourceDate)meta.append(el('span','',' · 수집 당시 표시: '+t.sourceDate));body.append(content,meta);
   const actions=el('div','actions');const actionLink=(label,url)=>{const a=el('a','',label);a.href=url;a.target='_blank';a.rel='noopener noreferrer';return a};
   if(app)actions.append(actionLink('앱에서 열기',t.appUrl));else{const b=el('button','','앱 연결 확인 중');b.disabled=true;actions.append(b)}
   if(web)actions.append(actionLink('웹에서 열기',t.webUrl));row.append(date,body,actions);group.append(row);
@@ -44,7 +63,11 @@ async function load(){try{
  const data=await unlockCatalog();if(!Array.isArray(data.items))throw Error('대화 목록 형식을 확인할 수 없습니다.');
  try{titles=await loadTitles()}catch{titlesReady=false;$('error').textContent='저장된 수정 제목을 불러오지 못했습니다. 기존 저장 내용을 보호하기 위해 제목 수정을 잠시 사용할 수 없습니다.';$('error').hidden=false}
  const map=new Map();for(const t of data.items){if(typeof t.id==='string'&&typeof t.title==='string'&&Number.isFinite(t.updatedAt)&&Math.abs(t.updatedAt)<8e12)map.set(t.id,{...t,project:typeof t.project==='string'?t.project:'프로젝트 없음'})}items=[...map.values()];
+ try{const extra=await loadTitles(extraStorage);if(extra.items){items.push(...extra.items.map(normalizeExtra))}}catch{extraReady=false;$('error').textContent='추가 목록을 불러오지 못했습니다. 저장된 목록을 보호하기 위해 가져오기를 중지했습니다.';$('error').hidden=false}
+ updateServices();
  $('total').textContent=items.length;$('coverage').textContent=data.coverage||'수집 범위 확인 필요';for(const p of [...new Set(items.map(t=>t.project))].sort())$('project').add(new Option(p,p));render();
 }catch(e){$('error').textContent=e.message;$('error').hidden=false;$('count').textContent='연결 확인 필요'}}
 for(const id of ['query','project','from','to','sort'])$(id).addEventListener('input',render);
 $('reset').onclick=()=>{for(const id of ['query','project','from','to'])$(id).value='';$('sort').value='desc';render()};$('lock').onclick=()=>location.reload();load();
+ $('import-form').onsubmit=async e=>{e.preventDefault();const button=$('import-button');try{if(!extraReady)throw Error('기존 추가 목록을 먼저 복구해야 합니다.');const raw=JSON.parse($('import-list').value);if(!Array.isArray(raw)||!raw.length||raw.length>10000)throw Error('가져올 목록을 확인해 주세요.');const next=new Map(items.filter(t=>['gemini','claude'].includes(t.kind)).map(t=>[t.id,t]));for(const value of raw){const t=normalizeExtra(value);next.set(t.id,t)}button.disabled=true;await saveTitles({items:[...next.values()]},extraStorage);items=[...items.filter(t=>!['gemini','claude'].includes(t.kind)),...next.values()];$('import-list').value='';$('import-status').textContent=raw.length+'개 항목을 이 브라우저에 저장했습니다.';updateServices();render()}catch(error){$('import-status').textContent=error instanceof SyntaxError?'목록 형식을 확인해 주세요.':error.message}finally{button.disabled=false}};
+
