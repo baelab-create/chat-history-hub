@@ -1,4 +1,4 @@
-import {unlockCatalog} from './vault.js';
+import {unlockCatalog} from './vault.js?v=2';
 const $=id=>document.getElementById(id);
 let items=[];
 const dateFormat=new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit'});
