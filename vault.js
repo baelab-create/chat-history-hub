@@ -11,7 +11,9 @@ export function unlockCatalog() {
   const status = document.getElementById('unlock-status');
   const input = document.getElementById('password');
   const button = document.getElementById('unlock-button');
-  document.getElementById('show-password').addEventListener('change',event=>{input.type=event.target.checked?'text':'password'});
+  const reveal=document.getElementById('show-password');
+  reveal.addEventListener('change',event=>{input.type=event.target.checked?'text':'password'});
+  button.disabled=false;reveal.disabled=false;status.textContent='';
   return new Promise(resolve => {
     form.addEventListener('submit',async event => {
       event.preventDefault();
@@ -20,10 +22,13 @@ export function unlockCatalog() {
       button.disabled=true;status.textContent='목록을 여는 중입니다…';
       let envelope;
       try {
+        const embedded=document.getElementById('encrypted-catalog');
+        if(embedded){envelope=JSON.parse(embedded.textContent)}else{
         const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),15000);
         let response;try{response=await fetch('./catalog.enc.json',{cache:'no-store',signal:controller.signal});}finally{clearTimeout(timer)}
         if(!response.ok)throw new Error();
         envelope=await response.json();
+        }
       } catch {status.textContent='목록을 내려받지 못했습니다. 연결을 확인하고 다시 시도해 주세요.';button.disabled=false;return;}
       try {
         const data=await decryptCatalog(envelope,input.value);
