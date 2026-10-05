@@ -22,6 +22,7 @@ export async function decryptCatalog(envelope, password) {
   return JSON.parse(new TextDecoder().decode(bytes));
 }
 export function unlockCatalog() {
+  if(typeof googleLoginConfiguration!=='undefined'&&googleLoginConfiguration.enabled)return unlockWithGoogle();
   const form = document.getElementById('unlock-form');
   const status = document.getElementById('unlock-status');
   const input = document.getElementById('password');

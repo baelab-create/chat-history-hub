@@ -55,8 +55,7 @@ function render(){
   const d=t.updatedAt===null?null:new Date(t.updatedAt*1000);const date=el('time','',d?timeFormat.format(d):'—');if(d)date.dateTime=d.toISOString();date.title=d?'마지막 수정일 · 한국 시간':'정확한 날짜 미확인';
   const meta=el('div','meta');meta.append(el('span','tag',serviceNames[t.kind]||'로컬 작업'),el('span','',t.project||'프로젝트 없음'));if(t.sourceDate)meta.append(el('span','',' · 수집 당시 표시: '+t.sourceDate));body.append(content,meta);
   const actions=el('div','actions');const actionLink=(label,url)=>{const a=el('a','',label);a.href=url;a.target='_blank';a.rel='noopener noreferrer';return a};
-  if(app)actions.append(actionLink('앱에서 열기',t.appUrl));else{const b=el('button','','앱 연결 확인 중');b.disabled=true;actions.append(b)}
-  if(web)actions.append(actionLink('웹에서 열기',t.webUrl));row.append(date,body,actions);group.append(row);
+  if(web)actions.append(actionLink('웹에서 열기',t.webUrl));else actions.append(el('span','no-web-link','웹 링크 없음'));row.append(date,body,actions);group.append(row);
  }
 }
 async function load(){try{
