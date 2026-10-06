@@ -1,5 +1,5 @@
 # My conversation index
 
-A static, password-encrypted personal conversation index. Titles and dates are decrypted only in the browser. No plaintext conversation catalog, password, or original conversation text is included.
+A personal conversation index with Google sign-in. Firebase owner-only access supplies the key to decrypt the catalog in the browser. This public repository contains no plaintext conversation catalog, unlock secret, or original conversation text.
 
-The initial catalog is a snapshot. Automatic collection and general ChatGPT desktop deep links are not yet connected.
+The base catalog is a snapshot. Imported Gemini/Claude lists and title aliases remain encrypted in the browser where they were added. Automatic collection and cross-device synchronization of these local additions are not implemented.
