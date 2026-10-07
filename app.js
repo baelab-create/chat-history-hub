@@ -82,7 +82,7 @@ function applyPendingCatalog(){if(!pendingCatalog){composeItems();return true;}c
 function updateSyncStatus(){
  const collected=Date.parse(catalogInfo.collectedAt),stale=!Number.isFinite(collected)||Date.now()-collected>15*60000;
  const date=Number.isFinite(collected)?new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',month:'long',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false}).format(collected):'확인 필요';
- $('last-collected').textContent='마지막 수집 · '+date;
+ $('last-collected').textContent='데스크탑 마지막 수집 · '+date;
  $('sync-status').textContent=refreshBusy?'새 목록을 확인하고 있습니다…':refreshFailed?'새 목록에 연결하지 못했습니다. 마지막 정상 목록을 표시하며 자동으로 다시 시도합니다.':pendingCatalog?'새 목록이 도착했습니다. 제목 편집을 마치면 반영합니다.':stale?'목록 수집이 지연되고 있습니다. 수집 PC에서 앱이 실행 중인지 확인해 주세요.':'5분 간격으로 수집 · 화면은 자동으로 갱신됩니다.';
  $('sync-status').dataset.state=refreshFailed||stale?'warning':'ok';
  $('refresh').disabled=refreshBusy;

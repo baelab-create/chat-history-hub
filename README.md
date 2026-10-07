@@ -23,7 +23,8 @@ The original `catalog.enc.json` remains the desktop collector's catalog. Each ad
    ```
 
 4. Run `node collector/sync.mjs --local-only` to check collection, then `node collector/sync.mjs` to publish. Use absolute Python/GitHub CLI paths when running from an OS scheduler. Schedule every five minutes with launchd (Mac) or Task Scheduler (Windows), using the same OS account as the app.
-5. Refresh the website after GitHub Pages finishes deploying. The new device appears automatically. Do not copy `private/collector/identity.json` to a different computer; each computer needs a unique ID.
+5. On Mac, run `node scripts/install-macos.mjs` to install the five-minute LaunchAgent. It copies the collector to `~/Documents/Codex/chat-history-hub-sync` and installs `~/Library/LaunchAgents/com.baelab.chat-history-hub.plist`. If a sandbox blocks service startup, run the displayed bootstrap command in Terminal or sign out/in. To stop: `launchctl bootout gui/$(id -u)/com.baelab.chat-history-hub`; remove that plist to disable future login startup.
+6. Refresh the website after GitHub Pages finishes deploying. The new device appears automatically. Do not copy `private/collector/identity.json` to a different computer; each computer needs a unique ID.
 
 ### Collection boundaries
 

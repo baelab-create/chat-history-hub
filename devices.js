@@ -1,5 +1,5 @@
 import {deviceRecipient} from './vault.js';
-import {decryptDevice} from './device-crypto.mjs';
+import {decryptDevice,encryptDevice} from './device-crypto.mjs';
 import {keepSnapshot,validateRegistry} from './device-catalog.mjs';
 const snapshots=new Map();
 const cachePrefix='chat-history-hub:device-envelope:v1:';
@@ -17,7 +17,7 @@ export async function refreshDevices(){
   const ids=validateRegistry(await json('./devices/index.json?t='+Math.floor(Date.now()/30000)));
   const results=await Promise.allSettled(ids.map(async id=>{
    const envelope=await json('./devices/'+id+'.enc.json?t='+Math.floor(Date.now()/30000));
-   await accept(id,envelope);try{localStorage.setItem(cachePrefix+id,JSON.stringify(envelope))}catch{}
+   await accept(id,envelope);try{localStorage.setItem(cachePrefix+id,JSON.stringify(await encryptDevice(snapshots.get(id),deviceRecipient.publicKey)))}catch{}
   }));
   const failed=results.filter(x=>x.status==='rejected').length;
   status.textContent=failed?failed+'개 기기에 연결하지 못했습니다. 마지막 정상 목록을 유지합니다.':ids.length?'데스크탑과 연결된 기기의 목록을 함께 표시합니다.':'데스크탑 목록을 표시 중입니다. 추가 기기를 연결하면 함께 표시됩니다.';
