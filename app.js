@@ -1,6 +1,8 @@
-import {unlockCatalog,loadTitles,saveTitles} from './vault.js?v=2';
+import {unlockCatalog,loadTitles,saveTitles,refreshCatalog} from './vault.js?v=2';
 const $=id=>document.getElementById(id);
 let items=[];
+let baseItems=[],extraItems=[],catalogInfo={},pendingCatalog=null;
+let refreshBusy=false,lastRefreshAttempt=0,refreshFailed=false;
 let selectedService='all';
 const serviceNames={chatgpt:'ChatGPT',gemini:'Gemini',claude:'Claude'};
 const serviceOf=t=>['gemini','claude'].includes(t.kind)?t.kind:'chatgpt';
@@ -27,10 +29,10 @@ function editTitle(t,content){
  const buttons=el('div','title-editor-actions');const save=el('button','','저장');save.type='submit';const cancel=el('button','','취소');cancel.type='button';const restore=el('button','','원래 제목');restore.type='button';
  const hint=el('p','edit-hint','이 브라우저에만 저장됩니다. ChatGPT 원본 제목은 바뀌지 않습니다.');const status=el('p','edit-status');status.setAttribute('role','status');
  buttons.append(save,cancel,restore);form.append(input,buttons,hint,status);content.replaceWith(form);input.focus();input.select();
- const close=()=>{form.replaceWith(content);content.focus()};cancel.onclick=close;restore.onclick=()=>{input.value=t.title;input.focus()};
+ const close=()=>{form.replaceWith(content);content.focus();applyPendingCatalog()};cancel.onclick=close;restore.onclick=()=>{input.value=t.title;input.focus()};
  input.oninput=()=>input.setCustomValidity('');form.onkeydown=e=>{if(e.key==='Escape'){e.preventDefault();close()}};
  form.onsubmit=async e=>{e.preventDefault();const value=input.value.trim();if(!value){input.setCustomValidity('제목을 입력해 주세요.');input.reportValidity();return}save.disabled=true;cancel.disabled=true;restore.disabled=true;input.disabled=true;
-  try{const next={...titles};if(value===t.title)delete next[t.id];else next[t.id]=value;await saveTitles(next);titles=next;render()}
+  try{const next={...titles};if(value===t.title)delete next[t.id];else next[t.id]=value;await saveTitles(next);titles=next;form.replaceWith(content);if(!applyPendingCatalog())render()}
   catch{status.textContent='저장하지 못했습니다. 브라우저의 저장 공간 설정을 확인해 주세요.';save.disabled=false;cancel.disabled=false;restore.disabled=false;input.disabled=false}
  };
 }
@@ -58,15 +60,51 @@ function render(){
   if(web)actions.append(actionLink('웹에서 열기',t.webUrl));else actions.append(el('span','no-web-link','웹 링크 없음'));row.append(date,body,actions);group.append(row);
  }
 }
+function composeItems(){
+ const map=new Map([...baseItems,...extraItems].map(t=>[t.id,t]));items=[...map.values()];
+ const project=$('project').value;$('project').replaceChildren(new Option('모든 프로젝트',''));
+ for(const p of [...new Set(items.map(t=>t.project||'프로젝트 없음'))].sort())$('project').add(new Option(p,p));
+ if([...$('project').options].some(o=>o.value===project))$('project').value=project;
+ updateServices();render();
+}
+function applyCatalog(data){
+ if(!Array.isArray(data.items)||!data.items.length||data.items.some(t=>typeof t.id!=='string'||typeof t.title!=='string'||!Number.isFinite(t.updatedAt)||Math.abs(t.updatedAt)>=8e12))throw Error('목록 형식이 올바르지 않습니다.');
+ if(Date.parse(data.collectedAt)<Date.parse(catalogInfo.collectedAt))return;
+ baseItems=[...new Map(data.items.map(t=>[t.id,{...t,project:typeof t.project==='string'?t.project:'프로젝트 없음'}])).values()];
+ catalogInfo=data;$('coverage').textContent=data.coverage||'수집 범위 확인 필요';composeItems();updateSyncStatus();
+}
+function applyPendingCatalog(){if(!pendingCatalog)return false;const data=pendingCatalog;pendingCatalog=null;applyCatalog(data);return true}
+function updateSyncStatus(){
+ const collected=Date.parse(catalogInfo.collectedAt),stale=!Number.isFinite(collected)||Date.now()-collected>15*60000;
+ const date=Number.isFinite(collected)?new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',month:'long',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false}).format(collected):'확인 필요';
+ $('last-collected').textContent='마지막 수집 · '+date;
+ $('sync-status').textContent=refreshBusy?'새 목록을 확인하고 있습니다…':refreshFailed?'새 목록에 연결하지 못했습니다. 마지막 정상 목록을 표시하며 자동으로 다시 시도합니다.':pendingCatalog?'새 목록이 도착했습니다. 제목 편집을 마치면 반영합니다.':stale?'목록 수집이 지연되고 있습니다. 수집 PC에서 앱이 실행 중인지 확인해 주세요.':'5분 간격으로 수집 · 화면은 자동으로 갱신됩니다.';
+ $('sync-status').dataset.state=refreshFailed||stale?'warning':'ok';
+ $('refresh').disabled=refreshBusy;
+}
+async function checkForUpdates(force=false){
+ if(refreshBusy||(!force&&Date.now()-lastRefreshAttempt<10000))return;
+ refreshBusy=true;lastRefreshAttempt=Date.now();updateSyncStatus();
+ try{
+  const data=await refreshCatalog();refreshFailed=false;
+  if(data&&Date.parse(data.collectedAt)>=Math.max(Date.parse(catalogInfo.collectedAt)||0,Date.parse(pendingCatalog?.collectedAt)||0)){
+   if(document.querySelector('.title-editor'))pendingCatalog=data;else applyCatalog(data);
+  }
+ }catch{refreshFailed=true}
+ finally{refreshBusy=false;updateSyncStatus()}
+}
 async function load(){try{
  const data=await unlockCatalog();if(!Array.isArray(data.items))throw Error('대화 목록 형식을 확인할 수 없습니다.');
  try{titles=await loadTitles()}catch{titlesReady=false;$('error').textContent='저장된 수정 제목을 불러오지 못했습니다. 기존 저장 내용을 보호하기 위해 제목 수정을 잠시 사용할 수 없습니다.';$('error').hidden=false}
- const map=new Map();for(const t of data.items){if(typeof t.id==='string'&&typeof t.title==='string'&&Number.isFinite(t.updatedAt)&&Math.abs(t.updatedAt)<8e12)map.set(t.id,{...t,project:typeof t.project==='string'?t.project:'프로젝트 없음'})}items=[...map.values()];
- try{const extra=await loadTitles(extraStorage);if(extra.items){items.push(...extra.items.map(normalizeExtra))}}catch{extraReady=false;$('error').textContent='추가 목록을 불러오지 못했습니다. 저장된 목록을 보호하기 위해 가져오기를 중지했습니다.';$('error').hidden=false}
- updateServices();
- $('total').textContent=items.length;$('coverage').textContent=data.coverage||'수집 범위 확인 필요';for(const p of [...new Set(items.map(t=>t.project))].sort())$('project').add(new Option(p,p));render();
+ try{const extra=await loadTitles(extraStorage);if(extra.items)extraItems=extra.items.map(normalizeExtra)}catch{extraReady=false;$('error').textContent='추가 목록을 불러오지 못했습니다. 저장된 목록을 보호하기 위해 가져오기를 중지했습니다.';$('error').hidden=false}
+ applyCatalog(data);
+ $('refresh').onclick=()=>checkForUpdates(true);
+ await checkForUpdates(true);
+ setInterval(()=>{updateSyncStatus();if(!document.hidden)checkForUpdates()},60000);
+ document.addEventListener('visibilitychange',()=>{if(!document.hidden)checkForUpdates()});
+ window.addEventListener('focus',()=>checkForUpdates());window.addEventListener('online',()=>checkForUpdates(true));
 }catch(e){$('error').textContent=e.message;$('error').hidden=false;$('count').textContent='연결 확인 필요'}}
 for(const id of ['query','project','from','to','sort'])$(id).addEventListener('input',render);
 $('reset').onclick=()=>{for(const id of ['query','project','from','to'])$(id).value='';$('sort').value='desc';render()};$('lock').onclick=()=>location.reload();load();
- $('import-form').onsubmit=async e=>{e.preventDefault();const button=$('import-button');try{if(!extraReady)throw Error('기존 추가 목록을 먼저 복구해야 합니다.');const raw=JSON.parse($('import-list').value);if(!Array.isArray(raw)||!raw.length||raw.length>10000)throw Error('가져올 목록을 확인해 주세요.');const next=new Map(items.filter(t=>['gemini','claude'].includes(t.kind)).map(t=>[t.id,t]));for(const value of raw){const t=normalizeExtra(value);next.set(t.id,t)}button.disabled=true;await saveTitles({items:[...next.values()]},extraStorage);items=[...items.filter(t=>!['gemini','claude'].includes(t.kind)),...next.values()];$('import-list').value='';$('import-status').textContent=raw.length+'개 항목을 이 브라우저에 저장했습니다.';updateServices();render()}catch(error){$('import-status').textContent=error instanceof SyntaxError?'목록 형식을 확인해 주세요.':error.message}finally{button.disabled=false}};
+ $('import-form').onsubmit=async e=>{e.preventDefault();const button=$('import-button');try{if(!extraReady)throw Error('기존 추가 목록을 먼저 복구해야 합니다.');const raw=JSON.parse($('import-list').value);if(!Array.isArray(raw)||!raw.length||raw.length>10000)throw Error('가져올 목록을 확인해 주세요.');const next=new Map(extraItems.map(t=>[t.id,t]));for(const value of raw){const t=normalizeExtra(value);next.set(t.id,t)}button.disabled=true;await saveTitles({items:[...next.values()]},extraStorage);extraItems=[...next.values()];$('import-list').value='';$('import-status').textContent=raw.length+'개 항목을 이 브라우저에 저장했습니다.';composeItems()}catch(error){$('import-status').textContent=error instanceof SyntaxError?'목록 형식을 확인해 주세요.':error.message}finally{button.disabled=false}};
 

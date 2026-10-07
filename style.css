@@ -10,3 +10,4 @@ button.title{display:block;text-align:left;border:0;background:transparent;paddi
 .google-login-button{display:block;width:100%;margin-top:24px;background:white;color:#19364f;border:1px solid #b9c9da;font-size:15px;font-weight:600}.google-login-button:disabled{opacity:.6}
 
 .no-web-link{font-size:11px;color:#879aab;white-space:nowrap;padding:8px 0}
+.sync-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}.sync-heading button{height:32px;font-size:12px;white-space:nowrap}.sync-help{font-size:11px;color:#647e94}#sync-status[data-state=warning]{color:#97531d}button:disabled{cursor:default;opacity:.6}
