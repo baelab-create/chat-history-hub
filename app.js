@@ -31,10 +31,13 @@ function editTitle(t,content){
  const buttons=el('div','title-editor-actions');const save=el('button','','저장');save.type='submit';const cancel=el('button','','취소');cancel.type='button';const restore=el('button','','원래 제목');restore.type='button';
  const hint=el('p','edit-hint','이 브라우저에만 저장됩니다. ChatGPT 원본 제목은 바뀌지 않습니다.');const status=el('p','edit-status');status.setAttribute('role','status');
  buttons.append(save,cancel,restore);form.append(input,buttons,hint,status);content.replaceWith(form);input.focus();input.select();
- const close=()=>{form.replaceWith(content);content.focus();applyPendingCatalog()};cancel.onclick=close;restore.onclick=()=>{input.value=t.title;input.focus()};
+ const outsideListener=new AbortController();
+ const close=(returnFocus=true)=>{if(input.disabled)return;outsideListener.abort();form.replaceWith(content);if(returnFocus)content.focus();if(pendingCatalog)applyPendingCatalog()};
+ document.addEventListener('pointerdown',event=>{if(!form.isConnected){outsideListener.abort();return}if(!form.contains(event.target))close(false)},{signal:outsideListener.signal});
+ cancel.onclick=()=>close();restore.onclick=()=>{input.value=t.title;input.focus()};
  input.oninput=()=>input.setCustomValidity('');form.onkeydown=e=>{if(e.key==='Escape'){e.preventDefault();close()}};
  form.onsubmit=async e=>{e.preventDefault();const value=input.value.trim();if(!value){input.setCustomValidity('제목을 입력해 주세요.');input.reportValidity();return}save.disabled=true;cancel.disabled=true;restore.disabled=true;input.disabled=true;
-  try{const next={...titles};if(value===t.title)delete next[t.id];else next[t.id]=value;await saveTitles(next);titles=next;form.replaceWith(content);if(!applyPendingCatalog())render()}
+  try{const next={...titles};if(value===t.title)delete next[t.id];else next[t.id]=value;await saveTitles(next);titles=next;outsideListener.abort();form.replaceWith(content);if(!applyPendingCatalog())render()}
   catch{status.textContent='저장하지 못했습니다. 브라우저의 저장 공간 설정을 확인해 주세요.';save.disabled=false;cancel.disabled=false;restore.disabled=false;input.disabled=false}
  };
 }
