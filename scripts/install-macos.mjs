@@ -6,7 +6,9 @@ import {fileURLToPath} from 'node:url';
 import {execFileSync} from 'node:child_process';
 if(process.platform!=='darwin')throw Error('This installer is for macOS');
 const source=fileURLToPath(new URL('../',import.meta.url));
-const target=join(homedir(),'Documents','Codex','chat-history-hub-sync');
+// Background agents cannot reliably access macOS privacy-protected Documents.
+const target=join(homedir(),'Library','Application Support','ChatHistoryHub');
+const legacy=join(homedir(),'Documents','Codex','chat-history-hub-sync');
 const label='com.baelab.chat-history-hub';
 const plist=join(homedir(),'Library','LaunchAgents',label+'.plist');
 const config=JSON.parse(await readFile(join(source,'private/collector/config.json'),'utf8'));
@@ -16,7 +18,9 @@ for(const file of ['device-crypto.mjs','device-catalog.mjs','collector/metadata.
 for(const file of ['config.json','identity.json','snapshot.json','cloud-observation.json','last-success.json']){
  const dest=join(target,'private/collector',file);
  try{await access(dest);continue}catch{}
- try{await copyFile(join(source,'private/collector',file),dest);await chmod(dest,0o600)}catch(e){if(e.code!=='ENOENT')throw e}
+ let from=join(legacy,'private/collector',file);
+ try{await access(from)}catch{from=join(source,'private/collector',file)}
+ try{await copyFile(from,dest);await chmod(dest,0o600)}catch(e){if(e.code!=='ENOENT')throw e}
 }
 const xml=s=>s.replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;');
 const output=join(target,'private/collector/service.log');
@@ -32,6 +36,6 @@ if(process.argv.includes('--prepare')){await writeFile(join(source,'work',label+
 else{
  await mkdir(join(homedir(),'Library','LaunchAgents'),{recursive:true});await writeFile(plist,contents,{mode:0o600});
  try{execFileSync('launchctl',['bootout',`gui/${process.getuid()}/${label}`],{stdio:'ignore'})}catch{}
- try{execFileSync('launchctl',['bootstrap',`gui/${process.getuid()}`,plist],{stdio:'inherit'});console.log('Mac collector installed: every 5 minutes while signed in and awake.')}
+ try{execFileSync('launchctl',['bootstrap',`gui/${process.getuid()}`,plist],{stdio:'inherit'});console.log('LaunchAgent registered. Verify a NEW last-success.json timestamp and uploaded:true in service.log before claiming collection succeeded.')}
  catch{console.error('Configuration installed, but macOS did not start the service. Run launchctl bootstrap from your own Terminal, or sign out and back in.');process.exitCode=2}
 }
