@@ -1,11 +1,13 @@
-import {unlockCatalog,loadTitles,saveTitles,refreshCatalog} from './vault.js?v=2';
+import {mergeCatalogs} from './device-catalog.mjs';
+import {refreshDevices,deviceSnapshots} from './devices.js';
+import {unlockCatalog,loadTitles,saveTitles,refreshCatalog} from './vault.js';
 const $=id=>document.getElementById(id);
 let items=[];
 let baseItems=[],extraItems=[],catalogInfo={},pendingCatalog=null;
 let refreshBusy=false,lastRefreshAttempt=0,refreshFailed=false;
 let selectedService='all';
-const serviceNames={chatgpt:'ChatGPT',gemini:'Gemini',claude:'Claude'};
-const serviceOf=t=>['gemini','claude'].includes(t.kind)?t.kind:'chatgpt';
+const serviceNames={chatgpt:'ChatGPT',gemini:'Gemini',claude:'Claude',codex:'로컬 작업'};
+const serviceOf=t=>['gemini','claude','codex'].includes(t.kind)?t.kind:'chatgpt';
 const extraStorage='chat-history-hub:extra-catalog:v1';
 let extraReady=true;
 function updateServices(){
@@ -43,7 +45,7 @@ function validUrl(raw,kind){try{const u=new URL(raw);return kind==='web'?u.proto
 function render(){
  const q=$('query').value.trim().toLocaleLowerCase('ko');
  const from=$('from').value,to=$('to').value,project=$('project').value;
- const rows=items.filter(t=>(selectedService==='all'||serviceOf(t)===selectedService)&&(!q||displayTitle(t).toLocaleLowerCase('ko').includes(q))&&(!project||t.project===project)&&(!(from||to)||Number.isFinite(t.updatedAt))&&(!from||dateFormat.format(new Date(t.updatedAt*1000))>=from)&&(!to||dateFormat.format(new Date(t.updatedAt*1000))<=to)).sort((a,b)=>{if(a.updatedAt===null)return b.updatedAt===null?0:1;if(b.updatedAt===null)return -1;return ($('sort').value==='asc'?1:-1)*(a.updatedAt-b.updatedAt)});
+ const rows=items.filter(t=>(!$('device').value||t.devices?.includes($('device').value))&&(selectedService==='all'||serviceOf(t)===selectedService)&&(!q||displayTitle(t).toLocaleLowerCase('ko').includes(q))&&(!project||t.project===project)&&(!(from||to)||Number.isFinite(t.updatedAt))&&(!from||dateFormat.format(new Date(t.updatedAt*1000))>=from)&&(!to||dateFormat.format(new Date(t.updatedAt*1000))<=to)).sort((a,b)=>{if(a.updatedAt===null)return b.updatedAt===null?0:1;if(b.updatedAt===null)return -1;return ($('sort').value==='asc'?1:-1)*(a.updatedAt-b.updatedAt)});
  $('service-note').textContent=selectedService==='gemini'||selectedService==='claude'?'브라우저에서 가져온 목록입니다. 자동 갱신·다른 기기 동기화는 아직 연결되지 않았습니다. 정확한 날짜가 없는 항목은 날짜 필터에서 제외됩니다.':'제목을 눌러 수정할 수 있습니다. Gemini·Claude에서 가져온 목록은 현재 브라우저에만 저장됩니다.';
  $('count').textContent=rows.length+'개 대화';$('results').replaceChildren();
  if(from&&to&&from>to){$('results').append(el('div','empty','시작일을 종료일 이전으로 선택해 주세요.'));return}
@@ -55,13 +57,16 @@ function render(){
   const app=t.appUrl&&validUrl(t.appUrl,'app');const web=t.webUrl&&validUrl(t.webUrl,'web');
   const row=el('div','row');row.setAttribute('role','listitem');const body=el('div');const content=el('button','title',displayTitle(t));content.type='button';content.title='클릭하여 제목 수정';content.disabled=!titlesReady;content.onclick=()=>editTitle(t,content);
   const d=t.updatedAt===null?null:new Date(t.updatedAt*1000);const date=el('time','',d?timeFormat.format(d):'—');if(d)date.dateTime=d.toISOString();date.title=d?'마지막 수정일 · 한국 시간':'정확한 날짜 미확인';
-  const meta=el('div','meta');meta.append(el('span','tag',serviceNames[t.kind]||'로컬 작업'),el('span','',t.project||'프로젝트 없음'));if(t.sourceDate)meta.append(el('span','',' · 수집 당시 표시: '+t.sourceDate));body.append(content,meta);
+  const meta=el('div','meta');meta.append(el('span','tag',serviceNames[t.kind]||'로컬 작업'),el('span','',t.project||'프로젝트 없음'));for(const id of t.devices||[])meta.append(el('span','tag',id==='legacy-desktop'?'데스크탑':deviceSnapshots().find(d=>d.deviceId===id)?.deviceName||'추가 기기'));if(t.sourceDate)meta.append(el('span','',' · 수집 당시 표시: '+t.sourceDate));body.append(content,meta);
   const actions=el('div','actions');const actionLink=(label,url)=>{const a=el('a','',label);a.href=url;a.target='_blank';a.rel='noopener noreferrer';return a};
   if(web)actions.append(actionLink('웹에서 열기',t.webUrl));else actions.append(el('span','no-web-link','웹 링크 없음'));row.append(date,body,actions);group.append(row);
  }
 }
 function composeItems(){
- const map=new Map([...baseItems,...extraItems].map(t=>[t.id,t]));items=[...map.values()];
+ items=[...mergeCatalogs(baseItems,deviceSnapshots()),...extraItems];
+ const selected=$('device').value;$('device').replaceChildren(new Option('모든 기기',''),new Option('데스크탑','legacy-desktop'));$('device-list').replaceChildren();
+ for(const d of deviceSnapshots()){ $('device').add(new Option(d.deviceName,d.deviceId));const stale=Date.now()-Date.parse(d.observedAt)>15*60000;$('device-list').append(el('li','',d.deviceName+' · '+d.items.length+'개 · 로컬 수집 '+new Date(d.observedAt).toLocaleString('ko-KR')+(stale?' · 수집 지연':'')+(d.cloudObservedAt?' · 웹 목록 관찰 '+new Date(d.cloudObservedAt).toLocaleString('ko-KR'):'')));}
+ if([...$('device').options].some(o=>o.value===selected))$('device').value=selected;
  const project=$('project').value;$('project').replaceChildren(new Option('모든 프로젝트',''));
  for(const p of [...new Set(items.map(t=>t.project||'프로젝트 없음'))].sort())$('project').add(new Option(p,p));
  if([...$('project').options].some(o=>o.value===project))$('project').value=project;
@@ -73,7 +78,7 @@ function applyCatalog(data){
  baseItems=[...new Map(data.items.map(t=>[t.id,{...t,project:typeof t.project==='string'?t.project:'프로젝트 없음'}])).values()];
  catalogInfo=data;$('coverage').textContent=data.coverage||'수집 범위 확인 필요';composeItems();updateSyncStatus();
 }
-function applyPendingCatalog(){if(!pendingCatalog)return false;const data=pendingCatalog;pendingCatalog=null;applyCatalog(data);return true}
+function applyPendingCatalog(){if(!pendingCatalog){composeItems();return true;}const data=pendingCatalog;pendingCatalog=null;applyCatalog(data);return true}
 function updateSyncStatus(){
  const collected=Date.parse(catalogInfo.collectedAt),stale=!Number.isFinite(collected)||Date.now()-collected>15*60000;
  const date=Number.isFinite(collected)?new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',month:'long',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false}).format(collected):'확인 필요';
@@ -91,7 +96,7 @@ async function checkForUpdates(force=false){
    if(document.querySelector('.title-editor'))pendingCatalog=data;else applyCatalog(data);
   }
  }catch{refreshFailed=true}
- finally{refreshBusy=false;updateSyncStatus()}
+ finally{await refreshDevices();if(!document.querySelector('.title-editor'))composeItems();refreshBusy=false;updateSyncStatus()}
 }
 async function load(){try{
  const data=await unlockCatalog();if(!Array.isArray(data.items))throw Error('대화 목록 형식을 확인할 수 없습니다.');
@@ -104,7 +109,7 @@ async function load(){try{
  document.addEventListener('visibilitychange',()=>{if(!document.hidden)checkForUpdates()});
  window.addEventListener('focus',()=>checkForUpdates());window.addEventListener('online',()=>checkForUpdates(true));
 }catch(e){$('error').textContent=e.message;$('error').hidden=false;$('count').textContent='연결 확인 필요'}}
-for(const id of ['query','project','from','to','sort'])$(id).addEventListener('input',render);
-$('reset').onclick=()=>{for(const id of ['query','project','from','to'])$(id).value='';$('sort').value='desc';render()};$('lock').onclick=()=>location.reload();load();
+for(const id of ['query','project','from','to','sort','device'])$(id).addEventListener('input',render);
+$('reset').onclick=()=>{for(const id of ['query','project','from','to','device'])$(id).value='';$('sort').value='desc';render()};$('lock').onclick=()=>location.reload();load();
  $('import-form').onsubmit=async e=>{e.preventDefault();const button=$('import-button');try{if(!extraReady)throw Error('기존 추가 목록을 먼저 복구해야 합니다.');const raw=JSON.parse($('import-list').value);if(!Array.isArray(raw)||!raw.length||raw.length>10000)throw Error('가져올 목록을 확인해 주세요.');const next=new Map(extraItems.map(t=>[t.id,t]));for(const value of raw){const t=normalizeExtra(value);next.set(t.id,t)}button.disabled=true;await saveTitles({items:[...next.values()]},extraStorage);extraItems=[...next.values()];$('import-list').value='';$('import-status').textContent=raw.length+'개 항목을 이 브라우저에 저장했습니다.';composeItems()}catch(error){$('import-status').textContent=error instanceof SyntaxError?'목록 형식을 확인해 주세요.':error.message}finally{button.disabled=false}};
 
