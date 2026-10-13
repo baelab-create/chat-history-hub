@@ -71,7 +71,7 @@ function composeItems(){
  const selected=$('device').value;$('device').replaceChildren(new Option('모든 기기',''),new Option('데스크탑','legacy-desktop'));$('device-list').replaceChildren();
  for(const d of collectionStatus(catalogInfo,deviceSnapshots()).devices){
   $('device').add(new Option(d.deviceName,d.deviceId));
-  $('device-list').append(el('li','',d.deviceName+' · ChatGPT '+d.webCount+'개 · 로컬 작업 '+d.localCount+'개 · '+(d.connected?'자동 연결 중':d.automatic?'연결 확인 필요':'이전 수집기')+' · 마지막 확인 '+new Date(d.cloudObservedAt||d.observedAt).toLocaleString('ko-KR')));
+  $('device-list').append(el('li','',d.deviceName+' · 저장된 ChatGPT '+d.webCount+'개 · 로컬 작업 '+d.localCount+'개 · 마지막 확인 '+new Date(d.cloudObservedAt||d.observedAt).toLocaleString('ko-KR')));
  }
  if([...$('device').options].some(o=>o.value===selected))$('device').value=selected;
  const project=$('project').value;$('project').replaceChildren(new Option('모든 프로젝트',''));
@@ -91,8 +91,8 @@ function updateSyncStatus(){
  const collected=Date.parse(state.cloudObservedAt);
  const date=Number.isFinite(collected)?new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',month:'long',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false}).format(collected):'확인 필요';
  $('last-collected').textContent='ChatGPT 마지막 확인 · '+date;
- $('sync-status').textContent=refreshBusy?'저장된 목록을 다시 불러오고 있습니다…':refreshFailed?'저장된 목록에 연결하지 못했습니다. 마지막 정상 목록을 유지합니다.':pendingCatalog?'새 목록이 도착했습니다. 제목 편집을 마치면 반영합니다.':state.message;
- $('sync-status').dataset.state=state.cloudMode==='automatic'&&!refreshFailed?'ok':'warning';
+ $('sync-status').textContent=refreshBusy?'저장된 목록을 다시 불러오고 있습니다…':refreshFailed?'저장된 목록에 연결하지 못했습니다. 마지막 정상 목록을 유지합니다.':'자동 수집과 화면 자동 갱신을 중지했습니다. 저장된 목록은 버튼으로 불러올 수 있습니다.';
+ $('sync-status').dataset.state='warning';
  $('refresh').disabled=refreshBusy;
 }
 async function checkForUpdates(force=false){
@@ -113,9 +113,8 @@ async function load(){try{
  applyCatalog(data);
  $('refresh').onclick=()=>checkForUpdates(true);
  await checkForUpdates(true);
- setInterval(()=>{updateSyncStatus();if(!document.hidden)checkForUpdates()},60000);
- document.addEventListener('visibilitychange',()=>{if(!document.hidden)checkForUpdates()});
- window.addEventListener('focus',()=>checkForUpdates());window.addEventListener('online',()=>checkForUpdates(true));
+ // Paused after reported interference with normal PC input.
+ // No timer, focus, visibility, or online event starts automatic refresh.
 }catch(e){$('error').textContent=e.message;$('error').hidden=false;$('count').textContent='연결 확인 필요'}}
 for(const id of ['query','project','from','to','sort','device'])$(id).addEventListener('input',render);
 $('reset').onclick=()=>{for(const id of ['query','project','from','to','device'])$(id).value='';$('sort').value='desc';render()};$('lock').onclick=()=>location.reload();load();

@@ -1,5 +1,13 @@
 # Chat History Hub
 
+**AUTOMATIC COLLECTION PAUSED BY THE USER (2026-10-13).** The Windows
+ChatHistoryHub-TitleSync task is disabled after reported cursor/focus disruption.
+The previous AI automation is also paused. Do not restart either collector or
+install the old collector on additional PCs. The page's timer/focus-triggered
+refresh has been removed. Existing encrypted data remains available manually.
+No replacement collector has been validated or enabled. The details below
+describe the paused implementation, not an active service.
+
 Private title index on GitHub Pages, opened with the existing Google/Firebase owner login. Conversation bodies, passwords, login tokens, and plaintext catalogs are never published.
 
 ## Automatic connection
