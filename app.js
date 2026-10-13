@@ -1,8 +1,14 @@
-import {mergeCatalogs} from './device-catalog.mjs?v=2';
-import {collectionStatus} from './sync-status.mjs?v=2';
-import {refreshDevices,deviceSnapshots} from './devices.js?v=2';
-import {unlockCatalog,loadTitles,saveTitles,refreshCatalog} from './vault.js';
+import {mergeCatalogs} from './device-catalog.mjs?v=7';
+import {collectionStatus} from './sync-status.mjs?v=7';
+import {refreshDevices,deviceSnapshots,acceptDeviceEnvelope} from './devices.js?v=7';
+import {unlockCatalog,loadTitles,saveTitles,refreshCatalog} from './vault.js?v=7';
+import {loadCloudDevices,saveCloudDevice} from './cloud-devices.js?v=7';
+import {makeNonce,invocation,requestManualCollection} from './manual-client.js?v=7';
+import {createRenderGate} from './render-guard.mjs?v=7';
 const $=id=>document.getElementById(id);
+let currentDeviceId=null,manualBusy=false,manualController;
+try{currentDeviceId=localStorage.getItem('chat-history-hub:this-device')}catch{}
+const renderGate=createRenderGate(document,()=>composeItemsNow(),pending=>{$('apply-update').hidden=!pending});
 let items=[];
 let baseItems=[],extraItems=[],catalogInfo={},pendingCatalog=null;
 let refreshBusy=false,lastRefreshAttempt=0,refreshFailed=false;
@@ -50,7 +56,7 @@ function render(){
  const q=$('query').value.trim().toLocaleLowerCase('ko');
  const from=$('from').value,to=$('to').value,project=$('project').value;
  const rows=items.filter(t=>(!$('device').value||t.devices?.includes($('device').value))&&(selectedService==='all'||serviceOf(t)===selectedService)&&(!q||displayTitle(t).toLocaleLowerCase('ko').includes(q))&&(!project||t.project===project)&&(!(from||to)||Number.isFinite(t.updatedAt))&&(!from||dateFormat.format(new Date(t.updatedAt*1000))>=from)&&(!to||dateFormat.format(new Date(t.updatedAt*1000))<=to)).sort((a,b)=>{if(a.updatedAt===null)return b.updatedAt===null?0:1;if(b.updatedAt===null)return -1;return ($('sort').value==='asc'?1:-1)*(a.updatedAt-b.updatedAt)});
- $('service-note').textContent='제목을 눌러 이 브라우저에서 사용할 이름을 수정할 수 있습니다.';
+ $('service-note').textContent='제목을 누르면 원래 대화가 열립니다. 로컬 작업은 해당 작업이 있는 PC에서 열 수 있습니다.';
  $('count').textContent=rows.length+'개 대화';$('results').replaceChildren();
  if(from&&to&&from>to){$('results').append(el('div','empty','시작일을 종료일 이전으로 선택해 주세요.'));return}
  if(!rows.length){$('results').append(el('div','empty',items.some(t=>selectedService==='all'||serviceOf(t)===selectedService)?'검색 결과가 없습니다.':'아직 가져온 대화가 없습니다.'));return}
@@ -58,15 +64,20 @@ function render(){
  for(const t of rows){
   const day=t.updatedAt===null?'unknown':dateFormat.format(new Date(t.updatedAt*1000));
   if(day!==previousDay){const section=el('section','day-group');section.append(el('h2','day-heading',day==='unknown'?'날짜 미확인':new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',year:'numeric',month:'long',day:'numeric',weekday:'long'}).format(new Date(t.updatedAt*1000))));group=el('div','rows');group.setAttribute('role','list');section.append(group);$('results').append(section);previousDay=day}
-  const app=t.appUrl&&validUrl(t.appUrl,'app');const web=t.webUrl&&validUrl(t.webUrl,'web');
-  const row=el('div','row');row.setAttribute('role','listitem');const body=el('div');const content=el('button','title',displayTitle(t));content.type='button';content.title='클릭하여 제목 수정';content.disabled=!titlesReady;content.onclick=()=>editTitle(t,content);
+  const web=t.webUrl&&validUrl(t.webUrl,'web');
+  const localUrl='codex://threads/'+t.id,local=t.kind==='codex'&&currentDeviceId&&t.devices?.includes(currentDeviceId)&&validUrl(localUrl,'app');
+  const row=el('div','row');row.setAttribute('role','listitem');const body=el('div');const content=el(web||local?'a':'span','title',displayTitle(t));
+  if(web||local){content.href=web?t.webUrl:localUrl;if(web){content.target='_blank';content.rel='noopener noreferrer'}}
   const d=t.updatedAt===null?null:new Date(t.updatedAt*1000);const date=el('time','',d?timeFormat.format(d):'—');if(d)date.dateTime=d.toISOString();date.title=d?'마지막 수정일 · 한국 시간':'정확한 날짜 미확인';
   const meta=el('div','meta');meta.append(el('span','tag',serviceNames[t.kind]||'로컬 작업'),el('span','',t.project||'프로젝트 없음'));for(const id of t.devices||[])meta.append(el('span','tag',id==='legacy-desktop'?'데스크탑':deviceSnapshots().find(d=>d.deviceId===id)?.deviceName||'추가 기기'));if(t.sourceDate)meta.append(el('span','',' · 수집 당시 표시: '+t.sourceDate));body.append(content,meta);
   const actions=el('div','actions');const actionLink=(label,url)=>{const a=el('a','',label);a.href=url;a.target='_blank';a.rel='noopener noreferrer';return a};
-  if(web)actions.append(actionLink('웹에서 열기',t.webUrl));else actions.append(el('span','no-web-link','웹 링크 없음'));row.append(date,body,actions);group.append(row);
+  if(web)actions.append(actionLink('웹에서 열기',t.webUrl));else if(local){const a=el('a','','Codex에서 열기');a.href=localUrl;actions.append(a)}else actions.append(el('span','no-web-link','해당 PC에서 최신화 후 열기'));
+  const edit=el('button','','이름 수정');edit.type='button';edit.disabled=!titlesReady;edit.onclick=()=>editTitle(t,content);actions.append(edit);
+  row.append(date,body,actions);group.append(row);
  }
 }
-function composeItems(){
+function composeItems(){renderGate.request()}
+function composeItemsNow(){
  items=mergeCatalogs(baseItems,deviceSnapshots()).filter(t=>t.kind==='chatgpt'||t.kind==='codex');
  const selected=$('device').value;$('device').replaceChildren(new Option('모든 기기',''),new Option('데스크탑','legacy-desktop'));$('device-list').replaceChildren();
  for(const d of collectionStatus(catalogInfo,deviceSnapshots()).devices){
@@ -90,8 +101,8 @@ function updateSyncStatus(){
  const state=collectionStatus(catalogInfo,deviceSnapshots());
  const collected=Date.parse(state.cloudObservedAt);
  const date=Number.isFinite(collected)?new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',month:'long',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false}).format(collected):'확인 필요';
- $('last-collected').textContent='ChatGPT 마지막 확인 · '+date;
- $('sync-status').textContent=refreshBusy?'저장된 목록을 다시 불러오고 있습니다…':refreshFailed?'저장된 목록에 연결하지 못했습니다. 마지막 정상 목록을 유지합니다.':'자동 수집과 화면 자동 갱신을 중지했습니다. 저장된 목록은 버튼으로 불러올 수 있습니다.';
+ $('last-collected').textContent='저장된 ChatGPT 마지막 확인 · '+date;
+ $('sync-status').textContent=refreshBusy?'저장된 목록을 다시 불러오고 있습니다…':refreshFailed?'일부 저장된 목록에 연결하지 못했습니다. 마지막 정상 목록을 유지합니다.':'수동 최신화 방식입니다. 버튼을 누른 PC에서만 한 번 수집합니다.';
  $('sync-status').dataset.state='warning';
  $('refresh').disabled=refreshBusy;
 }
@@ -104,8 +115,47 @@ async function checkForUpdates(force=false){
    if(document.querySelector('.title-editor'))pendingCatalog=data;else applyCatalog(data);
   }
  }catch{refreshFailed=true}
- finally{await refreshDevices();if(!document.querySelector('.title-editor'))composeItems();refreshBusy=false;updateSyncStatus()}
+ finally{await refreshDevices();try{const cloud=await loadCloudDevices();for(const row of cloud.valid)await acceptDeviceEnvelope(row.envelope);if(cloud.failed)refreshFailed=true}catch{refreshFailed=true}composeItems();refreshBusy=false;updateSyncStatus()}
 }
+const outboxKey='chat-history-hub:pending-manual-envelope';
+async function publishManual(envelope){
+ try{localStorage.setItem(outboxKey,JSON.stringify(envelope))}catch{}
+ $('retry-share').hidden=false;
+ await saveCloudDevice(envelope);
+ await acceptDeviceEnvelope(envelope);
+ try{localStorage.removeItem(outboxKey)}catch{}
+ $('retry-share').hidden=true;
+}
+async function collectManual(nonce){
+ try{
+  const result=await requestManualCollection(nonce,{signal:manualController.signal});
+  const snapshot=await acceptDeviceEnvelope(result.envelope);
+  currentDeviceId=snapshot.deviceId;try{localStorage.setItem('chat-history-hub:this-device',currentDeviceId)}catch{}
+  composeItems();
+  $('cancel-manual').hidden=true;$('manual-status').textContent='수집했습니다. 암호화한 목록을 다른 PC와 공유하는 중입니다…';
+  try{await publishManual(result.envelope)}catch{throw Error('이 PC 목록은 불러왔지만 다른 PC와 공유하지 못했습니다. ‘공유 저장 다시 시도’를 눌러 주세요.')}
+  $('manual-status').textContent=result.sourceError?`로컬 작업 ${result.localCount}개를 확인하고 공유했습니다. ChatGPT 목록은 확인하지 못했습니다. 앱 실행·로그인 상태를 확인해 주세요.`:
+   `ChatGPT ${result.cloudCount}개${result.localError?' · 로컬 작업 확인 실패':` · 로컬 작업 ${result.localCount}개`}를 확인하고 공유했습니다. 최근 목록과 고정 대화를 확인했으며 전체 내역은 아닙니다.`;
+  updateSyncStatus();
+ }catch(error){$('manual-status').textContent=error.message||'최신화를 완료하지 못했습니다. 기존 목록은 유지합니다.'}
+ finally{manualBusy=false;$('manual-sync').removeAttribute('aria-disabled');$('cancel-manual').hidden=true}
+}
+$('manual-sync').onclick=e=>{
+ if(manualBusy){e.preventDefault();return}
+ const nonce=makeNonce();e.currentTarget.href=invocation(nonce);manualBusy=true;manualController=new AbortController();
+ e.currentTarget.setAttribute('aria-disabled','true');$('cancel-manual').hidden=false;
+ $('manual-status').textContent='연결 도구를 기다립니다. 앱 열기와 로컬 연결 허용 안내가 나오면 확인해 주세요. 최대 2분 안에 끝납니다.';
+ // Keep the native URL launch in this click's user activation. No synthetic input.
+ void collectManual(nonce);
+};
+$('cancel-manual').onclick=()=>manualController?.abort();
+$('apply-update').onclick=()=>{if(pendingCatalog){const data=pendingCatalog;pendingCatalog=null;applyCatalog(data)}renderGate.apply()};
+$('retry-share').onclick=async()=>{
+ const button=$('retry-share');button.disabled=true;
+ try{const raw=localStorage.getItem(outboxKey);if(!raw)throw Error('다시 공유할 목록이 없습니다.');await publishManual(JSON.parse(raw));$('manual-status').textContent='다른 PC에서도 볼 수 있도록 공유 저장을 완료했습니다.'}
+ catch(e){$('manual-status').textContent='공유 저장 실패: '+e.message}
+ finally{button.disabled=false}
+};
 async function load(){try{
  const data=await unlockCatalog();if(!Array.isArray(data.items))throw Error('대화 목록 형식을 확인할 수 없습니다.');
  try{titles=await loadTitles()}catch{titlesReady=false;$('error').textContent='저장된 수정 제목을 불러오지 못했습니다. 기존 저장 내용을 보호하기 위해 제목 수정을 잠시 사용할 수 없습니다.';$('error').hidden=false}
@@ -113,6 +163,7 @@ async function load(){try{
  applyCatalog(data);
  $('refresh').onclick=()=>checkForUpdates(true);
  await checkForUpdates(true);
+ try{$('retry-share').hidden=!localStorage.getItem(outboxKey)}catch{}
  // Paused after reported interference with normal PC input.
  // No timer, focus, visibility, or online event starts automatic refresh.
 }catch(e){$('error').textContent=e.message;$('error').hidden=false;$('count').textContent='연결 확인 필요'}}

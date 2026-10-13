@@ -1,11 +1,11 @@
-import {decryptCatalog} from './vault.js';
+import {decryptCatalog} from './vault.js?v=7';
 export const googleLoginConfiguration={"enabled":true,"firebase":{"apiKey":"AIzaSyBXE4UNgFmlnfQ5TkpR6h4DIKE2rjbI0_Q","authDomain":"baelab-ledger.firebaseapp.com","projectId":"baelab-ledger","appId":"1:301215647344:web:9026cd464a9403629516b5"}};
 // Included in the standalone build. Configuration is supplied only after provisioning.
 let googleSession;
 function googleDeadline(promise,label,timeout=20000,code='connection-timeout'){
  let timer;return Promise.race([promise,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Object.assign(new Error(label),{code})),timeout)})]).finally(()=>clearTimeout(timer));
 }
-async function getGoogleSession(){
+export async function getGoogleSession(){
  if(googleSession)return googleSession;
  const [appSdk,authSdk,dbSdk]=await googleDeadline(Promise.all([
   import('https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js'),

@@ -70,11 +70,14 @@ export async function pipeCandidates(preferred){
  }
  return [...new Set(found)].slice(0,40);
 }
-export async function connectApp(preferred){
+export async function connectApp(preferred,signal){
  const server=await installedBridge();
  for(const pipe of await pipeCandidates(preferred)){
+  signal?.throwIfAborted();
   const client=new AppClient(server,pipe);
+  const abort=()=>client.close();signal?.addEventListener('abort',abort,{once:true});
   try{await client.initialize();return {client,pipe}}catch{client.close()}
+  finally{signal?.removeEventListener('abort',abort)}
  }
  throw new SourceError('app_not_running');
 }

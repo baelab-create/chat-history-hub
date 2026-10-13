@@ -19,6 +19,7 @@ export function normalizeSnapshot(input) {
   return {schemaVersion: 1, deviceId: input.deviceId, deviceName:typeof input.deviceName==='string'?input.deviceName.slice(0,100):'추가 기기', source: input.source, observedAt: new Date(input.observedAt).toISOString(),
     cloudObservedAt: validTime(input.cloudObservedAt),
     localObservedAt: input.localObservedAt===undefined?new Date(input.observedAt).toISOString():validTime(input.localObservedAt),
+    collectionMode: input.collectionMode==='manual'?'manual':'legacy',
     cloudMode: input.cloudMode==='app-bridge'?'app-bridge':'manual',
     cloudState: input.cloudMode==='app-bridge'&&input.cloudState==='connected'?'connected':'unavailable',
     sourceError: typeof input.sourceError==='string'&&/^[a-z_]{1,80}$/.test(input.sourceError)?input.sourceError:null,

@@ -1,12 +1,17 @@
-import {deviceRecipient} from './vault.js';
-import {decryptDevice,encryptDevice} from './device-crypto.mjs';
-import {keepSnapshot,validateRegistry} from './device-catalog.mjs?v=2';
+import {deviceRecipient} from './vault.js?v=7';
+import {decryptDevice,encryptDevice} from './device-crypto.mjs?v=7';
+import {keepSnapshot,validateRegistry} from './device-catalog.mjs?v=7';
 const snapshots=new Map();
 const cachePrefix='chat-history-hub:device-envelope:v1:';
 let busy=false,loadedCache=false;
 export const deviceSnapshots=()=>[...snapshots.values()];
 async function json(url){const response=await fetch(url,{cache:'no-store',credentials:'omit',signal:AbortSignal.timeout(15000)});if(!response.ok)throw Error('Device connection failed');const raw=await response.text();if(raw.length>20000000)throw Error('Device response too large');return JSON.parse(raw)}
 async function accept(id,envelope){if(envelope.deviceId!==id)throw Error('Wrong device');const incoming=await decryptDevice(envelope,deviceRecipient);snapshots.set(id,keepSnapshot(snapshots.get(id),incoming))}
+export async function acceptDeviceEnvelope(envelope){
+ await accept(envelope.deviceId,envelope);
+ try{localStorage.setItem(cachePrefix+envelope.deviceId,JSON.stringify(await encryptDevice(snapshots.get(envelope.deviceId),deviceRecipient.publicKey)))}catch{}
+ return snapshots.get(envelope.deviceId);
+}
 export async function refreshDevices(){
  if(busy)return;busy=true;
  const status=document.getElementById('device-status');

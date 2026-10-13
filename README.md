@@ -1,45 +1,34 @@
-# Chat History Hub
+# Chat History Hub — manual collection
 
-**AUTOMATIC COLLECTION PAUSED BY THE USER (2026-10-13).** The Windows
-ChatHistoryHub-TitleSync task is disabled after reported cursor/focus disruption.
-The previous AI automation is also paused. Do not restart either collector or
-install the old collector on additional PCs. The page's timer/focus-triggered
-refresh has been removed. Existing encrypted data remains available manually.
-No replacement collector has been validated or enabled. The details below
-describe the paused implementation, not an active service.
+The owner requested collection only after clicking “이 PC에서 최신화”. The old Windows scheduled task and AI heartbeat stay disabled. Do not run the legacy automatic installers or collector/sync.mjs.
 
-Private title index on GitHub Pages, opened with the existing Google/Firebase owner login. Conversation bodies, passwords, login tokens, and plaintext catalogs are never published.
+## Flow
 
-## Automatic connection
+1. Google/Firebase login unlocks the existing encrypted catalog. Page load reads saved metadata only.
+2. A deliberate click opens chathistoryhub://sync/<random-256-bit-nonce> on the current PC.
+3. A windowless launcher starts a short-lived server bound only to 127.0.0.1:41791. The URL alone does not collect. The server accepts an authenticated POST from the exact Hub origin and nonce. The browser may request permission for local access.
+4. One observation reads the installed app's recent 50 + pinned entries and named local SQLite task metadata. No app navigation, computer use, model calls or conversation body storage. The installed app bridge is version dependent, not a public consumer ChatGPT history API.
+5. The helper returns public-key-encrypted metadata, then exits. It has no Firebase token or GitHub credential requirement. No timer, startup service or scheduled task is installed.
+6. The browser writes ciphertext to private/chatHistoryHub/devices/{deviceId} in the existing owner-only Firebase project. Other devices load it on page open or “공유 목록 불러오기”. No realtime listener or periodic browser refresh is used.
 
-The Windows collector is installed as the current user's `ChatHistoryHub-TitleSync` scheduled task. It runs at sign-in and once a minute, without model requests or AI automations. It reads the recent 50 conversations plus pinned conversations through the app's installed read-only MCP list tool. It also reads named local task metadata from SQLite in read-only mode. The app must remain signed in and running for account conversation collection; local metadata is per device.
+GitHub Pages hosts code and the legacy encrypted catalog. No new plaintext titles are published. Existing Firebase owner rules are reused; ledger/dashboard collections are untouched. A failed cloud write preserves the local encrypted result with an explicit retry button. Anonymous reads must remain denied.
 
-The connector uses the installed `codex-app-tools` bridge, not an inference API. It discovers the installed plugin and its local IPC connection again after disconnection. This is an app integration rather than a guaranteed public consumer-history API; app interface changes fail closed and are shown as delayed connection. No authentication database or browser cookies are read. Only whitelisted ID, kind, title, update time, project, and archive metadata survive normalization. Tool summaries are discarded immediately.
+## Limits
 
-## Data flow and cost
+- Partial, accumulating index, not complete cloud history or deletion mirroring.
+- Sharing a local title does not transfer its body or workspace. The original PC/app must have access to the task.
+- Local links appear after this browser successfully collects from its own device.
+- Title aliases stay encrypted in this browser; they do not rename ChatGPT conversations.
+- Windows uses the installed pythonw.exe and disables child windows. macOS uses an LSUIElement app. No simulated input or window activation is used for collection. Permission dialogs occur only at the explicit click.
+- When input is focused as a response arrives, “새 목록 적용” defers rebuilding the list until a deliberate click.
+- Cancel stops waiting/uploading. A local request already started may complete before the bounded helper exits.
 
-Each PC has a unique random device ID and the vault's public encryption recipient key. It publishes an X25519/HKDF/AES-GCM encrypted snapshot and registry to the separate **catalog-data** branch. Normal data updates do not trigger GitHub Pages builds and incur no model/API inference cost. The existing Firebase configuration remains responsible only for Google sign-in and access to the unlock key.
+## Installation and validation
 
-Changes publish on the next successful check. Unchanged metadata sends a health observation at most every five minutes. The browser checks every minute and when revisited. GitHub cache propagation can add several minutes: this is automatic periodic synchronization, not a guaranteed instant stream. If no connected PC/app is running, new account conversations cannot be collected until it reconnects. Site refresh only loads published data.
+Use Install-Manual-Windows.cmd or sh Install-Manual-Mac.command. Requires Node.js 22+ and Python 3. Windows looks for the installed Codex Node runtime. Existing device identity/history is preserved. Installation does not trigger collection.
 
-The browser reads both legacy `main` device files and the new data branch, accepts newer observations, and caches last-good envelopes encrypted. Fresh local scans never make old cloud observations appear fresh. An automatic connection needs a recent successful account-list observation. Source/network errors retain the last published list. Concurrent GitHub updates retry without overwriting another device; a PID lock suppresses local overlap and recovers after dead processes.
+Windows target: %LOCALAPPDATA%/ChatHistoryHubManual. Mac target: ~/Library/Application Support/ChatHistoryHubManual, with URL handler in ~/Applications. Mac packaging has not been verified on a Mac.
 
-## Another computer
+Run node --test tests/*.test.mjs. Verify origin/nonce rejection, exactly one observation, automatic listener shutdown, encryption/tamper checks, preservation of old history, and focused-input protection. Browser checks use an isolated headless browser, never the user's Chrome.
 
-See [the installation page](https://baelab-create.github.io/chat-history-hub/setup/) and the allowlisted collector ZIP. Windows: run `Install-Windows.cmd`. Mac: run `sh Install-Mac.command` from the extracted folder. Requires the desktop app, Node.js 22+ (the installed app runtime is reused where possible), Python 3, GitHub CLI, and GitHub CLI sign-in to the repository owner account. Google sign-in to the website is separate from the collector's GitHub publishing authorization.
-
-Windows files live in `%LOCALAPPDATA%/ChatHistoryHub`. Its task is limited to the current interactive user, permits battery use, catches up after sleep, ignores overlapping runs, and stops a hung run after three minutes. `private/collector/last-check.json` records the most recent attempt; `last-success.json` records confirmed publishing. Logs contain counts and fixed error codes only. A bundled Node fallback survives removal of the app's runtime cache.
-
-Mac files live in `~/Library/Application Support/ChatHistoryHub`, with LaunchAgent `com.baelab.chat-history-hub` running every minute. Mac installation is provided but has not been executed from this Windows computer. Preserve an existing device's identity on upgrade; do not copy it to another PC. Existing Mac collectors must be upgraded to collect ordinary ChatGPT titles automatically.
-
-To stop Windows collection: disable `ChatHistoryHub-TitleSync` in Task Scheduler. To stop Mac collection: `launchctl bootout gui/$(id -u)/com.baelab.chat-history-hub`; removing its plist disables future login startup. The old AI automation remains paused.
-
-## Coverage and privacy
-
-Recent and pinned observations accumulate; this is not a full account export. Absence from a partial list, offline devices, or connection failures is never proof of deletion. Deletion mirroring is not implemented by this collector. Original historical items and browser-local title aliases remain preserved. Gemini/Claude are excluded from the displayed list; previously stored browser imports are left intact.
-
-`catalog.enc.json` is the legacy baseline. Do not run the old frontend generator: the current site uses browser modules directly. Source code, public recipient key, and ciphertext may be published; `private/`, source observations, keys, and runtime logs must remain ignored. Rotating the vault secret requires reconnecting collectors to its new recipient key.
-
-## Validation
-
-Run `node --test tests/*.test.mjs` (or `--test-isolation=none` if subprocesses are sandboxed). Coverage includes metadata allowlisting, source failures, timestamp honesty, encrypted merge/retention, wrong keys/tampering, concurrency locking, and crash recovery. Verify real `last-success.json` advances through an OS-scheduled run before claiming automatic sync is connected.
+Do not claim a live Firebase write or browser permission flow passed unless observed. Do not turn this manual collector into a scheduled job.

@@ -1,5 +1,5 @@
-import {unlockWithGoogle} from './google-auth.js';
-import {recipientFromPassword} from './device-crypto.mjs';
+import {unlockWithGoogle} from './google-auth.js?v=7';
+import {recipientFromPassword} from './device-crypto.mjs?v=7';
 export let deviceRecipient=null;
 const decode64 = value => Uint8Array.from(atob(value), c => c.charCodeAt(0));
 let titleKey;
