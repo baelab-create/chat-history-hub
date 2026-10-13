@@ -1,4 +1,5 @@
 import {mergeCatalogs} from './device-catalog.mjs';
+import {collectionStatus} from './sync-status.mjs';
 import {refreshDevices,deviceSnapshots} from './devices.js';
 import {unlockCatalog,loadTitles,saveTitles,refreshCatalog} from './vault.js';
 const $=id=>document.getElementById(id);
@@ -68,7 +69,10 @@ function render(){
 function composeItems(){
  items=[...mergeCatalogs(baseItems,deviceSnapshots()),...extraItems];
  const selected=$('device').value;$('device').replaceChildren(new Option('모든 기기',''),new Option('데스크탑','legacy-desktop'));$('device-list').replaceChildren();
- for(const d of deviceSnapshots()){ $('device').add(new Option(d.deviceName,d.deviceId));const stale=Date.now()-Date.parse(d.observedAt)>15*60000;$('device-list').append(el('li','',d.deviceName+' · '+d.items.length+'개 · 로컬 수집 '+new Date(d.observedAt).toLocaleString('ko-KR')+(stale?' · 수집 지연':'')+(d.cloudObservedAt?' · 웹 목록 관찰 '+new Date(d.cloudObservedAt).toLocaleString('ko-KR'):'')));}
+ for(const d of collectionStatus(catalogInfo,deviceSnapshots()).devices){
+  $('device').add(new Option(d.deviceName,d.deviceId));
+  $('device-list').append(el('li','',d.deviceName+' · 로컬 작업 '+d.localCount+'개 · 마지막 확인 '+new Date(d.observedAt).toLocaleString('ko-KR')+(d.stale?' · 수집기 점검 필요':'')+(d.webCount?' · 저장된 ChatGPT 대화 '+d.webCount+'개 (자동 수집 아님)':'')));
+ }
  if([...$('device').options].some(o=>o.value===selected))$('device').value=selected;
  const project=$('project').value;$('project').replaceChildren(new Option('모든 프로젝트',''));
  for(const p of [...new Set(items.map(t=>t.project||'프로젝트 없음'))].sort())$('project').add(new Option(p,p));
@@ -83,11 +87,12 @@ function applyCatalog(data){
 }
 function applyPendingCatalog(){if(!pendingCatalog){composeItems();return true;}const data=pendingCatalog;pendingCatalog=null;applyCatalog(data);return true}
 function updateSyncStatus(){
- const collected=Date.parse(catalogInfo.collectedAt),stale=!Number.isFinite(collected)||Date.now()-collected>15*60000;
+ const state=collectionStatus(catalogInfo,deviceSnapshots());
+ const collected=Date.parse(state.cloudObservedAt);
  const date=Number.isFinite(collected)?new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',month:'long',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false}).format(collected):'확인 필요';
- $('last-collected').textContent='데스크탑 마지막 수집 · '+date;
- $('sync-status').textContent=refreshBusy?'새 목록을 확인하고 있습니다…':refreshFailed?'새 목록에 연결하지 못했습니다. 마지막 정상 목록을 표시하며 자동으로 다시 시도합니다.':pendingCatalog?'새 목록이 도착했습니다. 제목 편집을 마치면 반영합니다.':stale?'목록 수집이 지연되고 있습니다. 수집 PC에서 앱이 실행 중인지 확인해 주세요.':'5분 간격으로 수집 · 화면은 자동으로 갱신됩니다.';
- $('sync-status').dataset.state=refreshFailed||stale?'warning':'ok';
+ $('last-collected').textContent='ChatGPT 마지막 확인 · '+date;
+ $('sync-status').textContent=refreshBusy?'저장된 목록을 다시 불러오고 있습니다…':refreshFailed?'저장된 목록에 연결하지 못했습니다. 마지막 정상 목록을 유지합니다.':pendingCatalog?'새 목록이 도착했습니다. 제목 편집을 마치면 반영합니다.':state.message;
+ $('sync-status').dataset.state='warning';
  $('refresh').disabled=refreshBusy;
 }
 async function checkForUpdates(force=false){
