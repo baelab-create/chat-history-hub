@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp,writeFile,readFile,rm,rmdir} from 'node:fs/promises';
+import {mkdtemp,writeFile,readFile,rm,rmdir,utimes} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {titlesFromApp} from '../collector/app-source.mjs';
@@ -27,5 +27,13 @@ test('lock rejects overlap, releases only its own file, recovers after a dead pr
   const recovered=await acquireLock(path);assert.equal(typeof recovered,'function');
   await writeFile(path,JSON.stringify({pid:process.pid,nonce:'new-owner'}));
   await recovered();assert.equal(JSON.parse(await readFile(path,'utf8')).nonce,'new-owner');
+ }finally{await rm(path,{force:true});await rmdir(dir)}
+});
+test('fresh incomplete locks are left alone; old interrupted writes recover',async()=>{
+ const dir=await mkdtemp(join(tmpdir(),'hub-lock-test-')),path=join(dir,'run.lock');
+ try{
+  await writeFile(path,'');assert.equal(await acquireLock(path),null);
+  const old=new Date(Date.now()-360000);await utimes(path,old,old);
+  const release=await acquireLock(path);assert.equal(typeof release,'function');await release();
  }finally{await rm(path,{force:true});await rmdir(dir)}
 });
