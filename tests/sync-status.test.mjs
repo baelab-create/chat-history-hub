@@ -22,3 +22,10 @@ test('unknown and future observation times are not treated as current evidence',
  assert.equal(collectionStatus({...catalog,collectedAt:'invalid'},[],now).cloudObservedAt,null);
  assert.equal(collectionStatus({...catalog,collectedAt:'2026-10-14T00:00:00Z'},[],now).cloudObservedAt,null);
 });
+test('automatic status requires a fresh successful cloud observation',()=>{
+ const device={deviceId:'b',deviceName:'PC',cloudMode:'app-bridge',cloudState:'connected',observedAt:'2026-10-13T09:59:00Z',cloudObservedAt:'2026-10-13T09:59:00Z',items:[{kind:'chatgpt'}]};
+ assert.equal(collectionStatus(catalog,[device],now).cloudMode,'automatic');
+ assert.equal(collectionStatus(catalog,[{...device,cloudState:'unavailable'}],now).cloudMode,'disconnected');
+ assert.equal(collectionStatus(catalog,[{...device,cloudObservedAt:'2026-10-13T09:40:00Z'}],now).cloudMode,'disconnected');
+ assert.equal(collectionStatus(catalog,[{...device,cloudObservedAt:'2026-10-14T00:00:00Z'}],now).cloudMode,'disconnected');
+});

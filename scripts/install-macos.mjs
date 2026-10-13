@@ -14,7 +14,7 @@ const plist=join(homedir(),'Library','LaunchAgents',label+'.plist');
 const config=JSON.parse(await readFile(join(source,'private/collector/config.json'),'utf8'));
 if(!config.recipient||!config.deviceName)throw Error('Configure and verify the collector first');
 await mkdir(join(target,'collector'),{recursive:true});await mkdir(join(target,'private/collector'),{recursive:true,mode:0o700});
-for(const file of ['device-crypto.mjs','device-catalog.mjs','collector/metadata.mjs','collector/read-local.py','collector/sync.mjs'])await copyFile(join(source,file),join(target,file));
+for(const file of ['device-crypto.mjs','device-catalog.mjs','collector/metadata.mjs','collector/read-local.py','collector/sync.mjs','collector/app-source.mjs','collector/publish.mjs','collector/lock.mjs'])await copyFile(join(source,file),join(target,file));
 for(const file of ['config.json','identity.json','snapshot.json','cloud-observation.json','last-success.json']){
  const dest=join(target,'private/collector',file);
  try{await access(dest);continue}catch{}
@@ -29,7 +29,7 @@ const contents=`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict><key>Label</key><string>${label}</string>
 <key>ProgramArguments</key><array><string>${xml(process.execPath)}</string><string>${xml(join(target,'collector/sync.mjs'))}</string></array>
-<key>WorkingDirectory</key><string>${xml(target)}</string><key>RunAtLoad</key><true/><key>StartInterval</key><integer>300</integer>
+<key>WorkingDirectory</key><string>${xml(target)}</string><key>RunAtLoad</key><true/><key>StartInterval</key><integer>60</integer>
 <key>StandardOutPath</key><string>${xml(output)}</string><key>StandardErrorPath</key><string>${xml(output)}</string>
 <key>ProcessType</key><string>Background</string></dict></plist>`;
 if(process.argv.includes('--prepare')){await writeFile(join(source,'work',label+'.plist'),contents);console.log('Prepared collector and launchd configuration; not scheduled yet.');}

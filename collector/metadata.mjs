@@ -17,10 +17,15 @@ export function normalizeSnapshot(input) {
     unique.set(item.kind+':'+item.id, item);
   }
   return {schemaVersion: 1, deviceId: input.deviceId, deviceName:typeof input.deviceName==='string'?input.deviceName.slice(0,100):'추가 기기', source: input.source, observedAt: new Date(input.observedAt).toISOString(),
-    cloudObservedAt: typeof input.cloudObservedAt==='string'&&Number.isFinite(Date.parse(input.cloudObservedAt))?input.cloudObservedAt:null,
+    cloudObservedAt: validTime(input.cloudObservedAt),
+    localObservedAt: input.localObservedAt===undefined?new Date(input.observedAt).toISOString():validTime(input.localObservedAt),
+    cloudMode: input.cloudMode==='app-bridge'?'app-bridge':'manual',
+    cloudState: input.cloudMode==='app-bridge'&&input.cloudState==='connected'?'connected':'unavailable',
+    sourceError: typeof input.sourceError==='string'&&/^[a-z_]{1,80}$/.test(input.sourceError)?input.sourceError:null,
     coverage: 'named-local-threads-and-observed-cloud-titles', completeForDeletion: false,
     items: [...unique.values()].sort((a, b) => b.updatedAt - a.updatedAt || a.id.localeCompare(b.id))};
 }
+function validTime(value){const n=Date.parse(value);return typeof value==='string'&&Number.isFinite(n)&&n<=Date.now()+60000?new Date(n).toISOString():null}
 
 export function accumulateDevice(previous, incoming) {
   const next = normalizeSnapshot(incoming);

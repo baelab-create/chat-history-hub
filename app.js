@@ -1,13 +1,13 @@
-import {mergeCatalogs} from './device-catalog.mjs';
-import {collectionStatus} from './sync-status.mjs';
-import {refreshDevices,deviceSnapshots} from './devices.js';
+import {mergeCatalogs} from './device-catalog.mjs?v=2';
+import {collectionStatus} from './sync-status.mjs?v=2';
+import {refreshDevices,deviceSnapshots} from './devices.js?v=2';
 import {unlockCatalog,loadTitles,saveTitles,refreshCatalog} from './vault.js';
 const $=id=>document.getElementById(id);
 let items=[];
 let baseItems=[],extraItems=[],catalogInfo={},pendingCatalog=null;
 let refreshBusy=false,lastRefreshAttempt=0,refreshFailed=false;
 let selectedService='all';
-const serviceNames={chatgpt:'ChatGPT',gemini:'Gemini',claude:'Claude',codex:'로컬 작업'};
+const serviceNames={chatgpt:'ChatGPT',codex:'로컬 작업'};
 const serviceOf=t=>['gemini','claude','codex'].includes(t.kind)?t.kind:'chatgpt';
 const extraStorage='chat-history-hub:extra-catalog:v1';
 let extraReady=true;
@@ -50,7 +50,7 @@ function render(){
  const q=$('query').value.trim().toLocaleLowerCase('ko');
  const from=$('from').value,to=$('to').value,project=$('project').value;
  const rows=items.filter(t=>(!$('device').value||t.devices?.includes($('device').value))&&(selectedService==='all'||serviceOf(t)===selectedService)&&(!q||displayTitle(t).toLocaleLowerCase('ko').includes(q))&&(!project||t.project===project)&&(!(from||to)||Number.isFinite(t.updatedAt))&&(!from||dateFormat.format(new Date(t.updatedAt*1000))>=from)&&(!to||dateFormat.format(new Date(t.updatedAt*1000))<=to)).sort((a,b)=>{if(a.updatedAt===null)return b.updatedAt===null?0:1;if(b.updatedAt===null)return -1;return ($('sort').value==='asc'?1:-1)*(a.updatedAt-b.updatedAt)});
- $('service-note').textContent=selectedService==='gemini'||selectedService==='claude'?'브라우저에서 가져온 목록입니다. 자동 갱신·다른 기기 동기화는 아직 연결되지 않았습니다. 정확한 날짜가 없는 항목은 날짜 필터에서 제외됩니다.':'제목을 눌러 수정할 수 있습니다. Gemini·Claude에서 가져온 목록은 현재 브라우저에만 저장됩니다.';
+ $('service-note').textContent='제목을 눌러 이 브라우저에서 사용할 이름을 수정할 수 있습니다.';
  $('count').textContent=rows.length+'개 대화';$('results').replaceChildren();
  if(from&&to&&from>to){$('results').append(el('div','empty','시작일을 종료일 이전으로 선택해 주세요.'));return}
  if(!rows.length){$('results').append(el('div','empty',items.some(t=>selectedService==='all'||serviceOf(t)===selectedService)?'검색 결과가 없습니다.':'아직 가져온 대화가 없습니다.'));return}
@@ -67,11 +67,11 @@ function render(){
  }
 }
 function composeItems(){
- items=[...mergeCatalogs(baseItems,deviceSnapshots()),...extraItems];
+ items=mergeCatalogs(baseItems,deviceSnapshots()).filter(t=>t.kind==='chatgpt'||t.kind==='codex');
  const selected=$('device').value;$('device').replaceChildren(new Option('모든 기기',''),new Option('데스크탑','legacy-desktop'));$('device-list').replaceChildren();
  for(const d of collectionStatus(catalogInfo,deviceSnapshots()).devices){
   $('device').add(new Option(d.deviceName,d.deviceId));
-  $('device-list').append(el('li','',d.deviceName+' · 로컬 작업 '+d.localCount+'개 · 마지막 확인 '+new Date(d.observedAt).toLocaleString('ko-KR')+(d.stale?' · 수집기 점검 필요':'')+(d.webCount?' · 저장된 ChatGPT 대화 '+d.webCount+'개 (자동 수집 아님)':'')));
+  $('device-list').append(el('li','',d.deviceName+' · ChatGPT '+d.webCount+'개 · 로컬 작업 '+d.localCount+'개 · '+(d.connected?'자동 연결 중':d.automatic?'연결 확인 필요':'이전 수집기')+' · 마지막 확인 '+new Date(d.cloudObservedAt||d.observedAt).toLocaleString('ko-KR')));
  }
  if([...$('device').options].some(o=>o.value===selected))$('device').value=selected;
  const project=$('project').value;$('project').replaceChildren(new Option('모든 프로젝트',''));
@@ -92,7 +92,7 @@ function updateSyncStatus(){
  const date=Number.isFinite(collected)?new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',month:'long',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false}).format(collected):'확인 필요';
  $('last-collected').textContent='ChatGPT 마지막 확인 · '+date;
  $('sync-status').textContent=refreshBusy?'저장된 목록을 다시 불러오고 있습니다…':refreshFailed?'저장된 목록에 연결하지 못했습니다. 마지막 정상 목록을 유지합니다.':pendingCatalog?'새 목록이 도착했습니다. 제목 편집을 마치면 반영합니다.':state.message;
- $('sync-status').dataset.state='warning';
+ $('sync-status').dataset.state=state.cloudMode==='automatic'&&!refreshFailed?'ok':'warning';
  $('refresh').disabled=refreshBusy;
 }
 async function checkForUpdates(force=false){
