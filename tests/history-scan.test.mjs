@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {scanHistory} from '../extension/history-scan.js';
+import {scanHistory,mergeDisplayedOrder} from '../extension/history-scan.js';
 import {splitBrowserArchive} from '../browser-archive.mjs';
 const row=(n,rank=n)=>({id:`11111111-1111-4111-8111-${String(n).padStart(12,'0')}`,title:'대화 '+n,rank,pinned:rank===null,updatedAt:null});
 test('collects beyond initial 25 rows even when old rows disappear from virtualized DOM',async()=>{
@@ -21,3 +21,5 @@ test('archive partitions are stable across repeated scans and retain all records
  assert.ok(all.every(p=>p.archiveDeviceId===snapshot.deviceId));
 });
 test('repeated source loading failures retry twice then return partial history',async()=>{let retries=0;const out=await scanHistory({read:async()=>({items:[row(1)]}),advance:async args=>{if(args?.retry)retries++;return {error:true,retryAvailable:true,atBottom:true,busy:false}}});assert.equal(retries,2);assert.equal(out.scan.reason,'load-error');assert.equal(out.items.length,1)});
+
+test('later rendered pages can insert older rows between already observed anchors',()=>{assert.deepEqual(mergeDisplayedOrder(['a','d','e'],['a','b','c','d','e']),['a','b','c','d','e']);assert.deepEqual(mergeDisplayedOrder(['a','b','c'],['c','d']),['a','b','c','d']);assert.deepEqual(mergeDisplayedOrder(['a','b'],['c','d']),['a','b','c','d']);});
