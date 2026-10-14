@@ -3,11 +3,11 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import vm from 'node:vm';
 const source=await readFile(new URL('../app.js',import.meta.url),'utf8');
-function fixture({collectionError,sourceError,saveError,readError}={}){
+function fixture({collectionError,saveError,readError}={}){
  const nodes=new Map(),storage=new Map(),calls={read:0,collect:0,save:0};
  const $=id=>{if(!nodes.has(id))nodes.set(id,{textContent:'',dataset:{},hidden:false,setAttribute(k,v){this[k]=v},removeAttribute(k){delete this[k]}});return nodes.get(id)};
  let finish;
- const context=vm.createContext({$,Date,Intl,AbortController,Promise,Error,JSON,localStorage:{setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)},collectionStatus:()=>({cloudObservedAt:'2026-10-13T11:07:00Z'}),deviceSnapshots:()=>[],refreshCatalog:async()=>null,refreshDevices:async()=>{},loadCloudDevices:async()=>{calls.read++;if(readError)throw Error('offline');return {valid:[]}},acceptDeviceEnvelope:async()=>({deviceId:'test'}),composeItems(){},applyCatalog(){},document:{querySelector:()=>null},saveCloudDevice:async()=>{calls.save++;if(saveError)throw Error('offline')},makeNonce:()=> 'a'.repeat(64),invocation:n=>'chathistoryhub://sync/'+n,requestManualCollection:()=>{calls.collect++;return new Promise((resolve,reject)=>{finish=()=>collectionError?reject(Error('helper unavailable')):resolve({envelope:{},cloudCount:1,localCount:20,sourceError})})}});
+ const context=vm.createContext({$,Date,Intl,AbortController,Promise,Error,JSON,crypto:{randomUUID:()=> '11111111-1111-4111-8111-111111111111'},deviceRecipient:{publicKey:'test'},encryptDevice:async()=>({}),browserSnapshot:()=>({items:[{}]}),selectedService:'all',localStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)},collectionStatus:()=>({cloudObservedAt:'2026-10-13T11:07:00Z'}),deviceSnapshots:()=>[],refreshCatalog:async()=>null,refreshDevices:async()=>{},loadCloudDevices:async()=>{calls.read++;if(readError)throw Error('offline');return {valid:[]}},acceptDeviceEnvelope:async()=>({deviceId:'test'}),composeItems(){},applyCatalog(){},document:{querySelector:()=>null},saveCloudDevice:async()=>{calls.save++;if(saveError)throw Error('offline')},requestBrowserSnapshot:()=>{calls.collect++;return new Promise((resolve,reject)=>{finish=()=>collectionError?reject(Error('helper unavailable')):resolve({items:[{}]})})}});
  vm.runInContext('let catalogInfo={},pendingCatalog=null,refreshBusy=false,lastRefreshAttempt=0,refreshFailed=false,manualBusy=false,manualController,currentDeviceId;',context);
  vm.runInContext(source.slice(source.indexOf('function updateSyncStatus(){'),source.indexOf("$('cancel-manual').onclick")),context);
  const click=()=>{const e={currentTarget:$('manual-sync'),preventDefault(){this.prevented=true}};$('manual-sync').onclick(e);return e};
@@ -23,11 +23,8 @@ test('loading saved data on entry does not collect',async()=>{
 test('helper failure still loads saved data and explicitly reports failure',async()=>{
  const f=fixture({collectionError:true});f.click();await f.settle();assert.equal(f.calls.read,1);assert.equal(f.calls.save,0);assert.match(f.$('manual-status').textContent,/저장된 목록은 불러왔지만 새 대화는 가져오지 못했습니다/);
 });
-test('partial local success never claims ChatGPT was refreshed',async()=>{
- const f=fixture({sourceError:'app_not_running'});f.click();await f.settle();assert.match(f.$('manual-status').textContent,/이전 ChatGPT 목록을 유지/);assert.match(f.$('last-collected').textContent,/10월 13일/);
-});
 test('failed cloud save retains retry data',async()=>{
- const f=fixture({saveError:true});f.click();await f.settle();assert.equal(f.$('retry-share').hidden,false);assert.equal(f.storage.size,2);assert.match(f.$('manual-status').textContent,/공유하지 못했습니다/);
+ const f=fixture({saveError:true});f.click();await f.settle();assert.equal(f.$('retry-share').hidden,false);assert.equal(f.storage.size,2);assert.match(f.$('manual-status').textContent,/공유 저장에 실패/);
 });
 test('both read and collection failure do not claim saved list was refreshed',async()=>{
  const f=fixture({collectionError:true,readError:true});f.click();await f.settle();assert.match(f.$('manual-status').textContent,/모두 확인하지 못했습니다/);

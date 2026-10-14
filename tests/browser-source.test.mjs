@@ -1,0 +1,15 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {browserSnapshot} from '../browser-client.mjs';
+import {normalizeSnapshot,accumulateDevice} from '../collector/metadata.mjs';
+import {mergeCatalogs} from '../device-catalog.mjs';
+import {recipientFromPassword,encryptDevice,decryptDevice} from '../device-crypto.mjs';
+const id='11111111-1111-4111-8111-111111111111',device='22222222-2222-4222-8222-222222222222';
+const raw=()=>({version:1,observedAt:new Date().toISOString(),coverage:'loaded-sidebar-only',items:[{id,title:'새 제목',webUrl:'https://chatgpt.com/c/'+id,rank:0,pinned:false,updatedAt:null,body:'not allowed'}]});
+test('only metadata survives; unknown modification date stays null',()=>{const s=normalizeSnapshot(browserSnapshot(raw(),device));assert.equal(s.items[0].updatedAt,null);assert.equal(s.items[0].sidebarRank,0);assert.equal('body' in s.items[0],false);assert.equal(s.localObservedAt,null)});
+test('reject invalid URL, duplicate IDs, bad ranks and invented dates',()=>{for(const patch of [{webUrl:'https://evil.test/c/'+id},{rank:-1},{updatedAt:123},{id:'bad'}]){const r=raw();Object.assign(r.items[0],patch);assert.throws(()=>browserSnapshot(r,device))}const r=raw();r.items.push(r.items[0]);assert.throws(()=>browserSnapshot(r,device))});
+test('browser title can refresh while preserving previously known date',()=>{const s=browserSnapshot(raw(),device);const out=mergeCatalogs([{id,kind:'chatgpt',title:'옛 제목',updatedAt:1700000000}], [s]);assert.equal(out[0].title,'새 제목');assert.equal(out[0].updatedAt,1700000000);assert.equal(out[0].sidebarRank,0)});
+test('partial later observation retains history without assigning current ranks to missing rows',()=>{const a=browserSnapshot(raw(),device);a.observedAt=a.cloudObservedAt=new Date(Date.now()-10000).toISOString();a.items[0].browserObservedAt=a.observedAt;const r=raw();r.items[0]={...r.items[0],id:'33333333-3333-4333-8333-333333333333',webUrl:'https://chatgpt.com/c/33333333-3333-4333-8333-333333333333'};const b=browserSnapshot(r,device);const merged=accumulateDevice(a,b);assert.equal(merged.items.length,2);assert.equal(merged.items.filter(i=>i.browserObservedAt===b.observedAt).length,1)});
+test('encrypted browser snapshot round-trips through existing envelope',async()=>{const s=browserSnapshot(raw(),device),recipient=await recipientFromPassword('synthetic test password');const envelope=await encryptDevice(s,recipient.publicKey);const recovered=normalizeSnapshot(await decryptDevice(envelope,recipient));assert.equal(recovered.items[0].title,'새 제목');assert.equal(JSON.stringify(envelope).includes('새 제목'),false)});
+
+test('browser title and order survive later merging of an older desktop observation',()=>{const s=browserSnapshot(raw(),device);const desktop={...s,deviceId:'44444444-4444-4444-8444-444444444444',source:'desktop-app',items:[{id,kind:'chatgpt',title:'old desktop title',updatedAt:1700000000,archived:false}]};const out=mergeCatalogs([], [s,desktop]);assert.equal(out[0].title,'새 제목');assert.equal(out[0].sidebarRank,0);assert.equal(out[0].updatedAt,1700000000)});

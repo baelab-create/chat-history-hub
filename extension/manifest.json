@@ -1,0 +1,8 @@
+{
+ "manifest_version":3,"name":"Chat History Hub — 최근 목록","version":"1.0.0",
+ "description":"버튼을 눌렀을 때 ChatGPT에 표시된 최근 대화 제목과 링크만 미리보기 후 Hub로 전달합니다.",
+ "permissions":["scripting","storage"],
+ "host_permissions":["https://chatgpt.com/*","https://baelab-create.github.io/*"],
+ "background":{"service_worker":"background.js","type":"module"},
+ "content_scripts":[{"matches":["https://baelab-create.github.io/chat-history-hub/*"],"js":["bridge.js"],"run_at":"document_start"}]
+}

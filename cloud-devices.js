@@ -1,7 +1,7 @@
 import {getGoogleSession} from './google-auth.js?v=7';
 import {decryptDevice} from './device-crypto.mjs?v=7';
 import {deviceRecipient} from './vault.js?v=7';
-import {normalizeSnapshot,accumulateDevice} from './collector/metadata.mjs?v=7';
+import {normalizeSnapshot,accumulateDevice} from './collector/metadata.mjs?v=9';
 const path=['private','chatHistoryHub','devices'];
 const deadline=(promise)=>{let timer;return Promise.race([promise,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('공유 저장소의 응답을 확인하지 못했습니다.')),20000)})]).finally(()=>clearTimeout(timer))};
 async function connection(){const s=await getGoogleSession();if(!s.auth.currentUser)throw Error('로그인이 필요합니다.');return s}
