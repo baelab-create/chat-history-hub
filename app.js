@@ -1,3 +1,4 @@
+import {arrangeConversations,conversationGroup} from './conversation-order.mjs?v=11';
 import {splitBrowserArchive} from './browser-archive.mjs?v=10';
 import {mergeCatalogs} from './device-catalog.mjs?v=10';
 import {collectionStatus} from './sync-status.mjs?v=7';
@@ -60,22 +61,24 @@ function render(){
  const from=$('from').value,to=$('to').value,project=$('project').value;
  const newestBrowser=items.reduce((latest,t)=>t.browserObservedAt>latest?t.browserObservedAt:latest,'');
  const recent=$('sort').value==='recent'&&!q;
- const rows=items.filter(t=>(!recent||(t.browserObservedAt===newestBrowser&&(t.sidebarRank!==null||t.pinned)))&&(!$('device').value||t.devices?.some(id=>id===$('device').value||deviceSnapshots().find(s=>s.deviceId===id)?.archiveDeviceId===$('device').value))&&(selectedService==='all'||serviceOf(t)===selectedService)&&(!q||displayTitle(t).toLocaleLowerCase('ko').includes(q))&&(!project||t.project===project)&&(!(from||to)||Number.isFinite(t.updatedAt))&&(!from||dateFormat.format(new Date(t.updatedAt*1000))>=from)&&(!to||dateFormat.format(new Date(t.updatedAt*1000))<=to)).sort((a,b)=>{if(recent)return (a.sidebarRank??10000)-(b.sidebarRank??10000);if(a.updatedAt===null)return b.updatedAt===null?0:1;if(b.updatedAt===null)return -1;return ($('sort').value==='asc'?1:-1)*(a.updatedAt-b.updatedAt)});
- $('service-note').textContent='제목을 누르면 원래 대화가 열립니다. 로컬 작업은 해당 작업이 있는 PC에서 열 수 있습니다.';
+ const chromeOrder=$('sort').value==='browser';
+ const sourceRows=chromeOrder?arrangeConversations(items):items;
+ const rows=sourceRows.filter(t=>(!recent||(t.browserObservedAt===newestBrowser&&(t.sidebarRank!==null||t.pinned)))&&(!$('device').value||t.devices?.some(id=>id===$('device').value||deviceSnapshots().find(s=>s.deviceId===id)?.archiveDeviceId===$('device').value))&&(selectedService==='all'||serviceOf(t)===selectedService)&&(!q||displayTitle(t).toLocaleLowerCase('ko').includes(q))&&(!project||t.project===project)&&(!(from||to)||Number.isFinite(t.updatedAt))&&(!from||dateFormat.format(new Date(t.updatedAt*1000))>=from)&&(!to||dateFormat.format(new Date(t.updatedAt*1000))<=to)).sort((a,b)=>{if(chromeOrder)return 0;if(recent)return (a.sidebarRank??10000)-(b.sidebarRank??10000);if(a.updatedAt===null)return b.updatedAt===null?0:1;if(b.updatedAt===null)return -1;return ($('sort').value==='asc'?1:-1)*(a.updatedAt-b.updatedAt)});
+ $('service-note').textContent=(chromeOrder?'Chrome에서 확인한 순서입니다. 추정 날짜는 앞뒤 대화의 기존 기록을 기준으로 하며, 실제 수정일과 다를 수 있습니다. ':'')+'제목을 누르면 원래 대화가 열립니다. 로컬 작업은 해당 작업이 있는 PC에서 열 수 있습니다.';
  $('count').textContent=rows.length+'개 대화';$('results').replaceChildren();
  if(from&&to&&from>to){$('results').append(el('div','empty','시작일을 종료일 이전으로 선택해 주세요.'));return}
  if(recent&&!newestBrowser){$('results').append(el('div','empty','최신화를 눌러 ChatGPT 최근 목록을 가져와 주세요.'));return;}
  if(!rows.length){$('results').append(el('div','empty',items.some(t=>selectedService==='all'||serviceOf(t)===selectedService)?'검색 결과가 없습니다.':'아직 가져온 대화가 없습니다.'));return}
  let previousDay,group;
  for(const t of rows){
-  const day=recent?'recent':t.updatedAt===null?'unknown':dateFormat.format(new Date(t.updatedAt*1000));
-  if(day!==previousDay){const section=el('section','day-group');section.append(el('h2','day-heading',day==='recent'?'최근 가져온 ChatGPT 대화':day==='unknown'?'날짜 미확인':new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',year:'numeric',month:'long',day:'numeric',weekday:'long'}).format(new Date(t.updatedAt*1000))));group=el('div','rows');group.setAttribute('role','list');section.append(group);$('results').append(section);previousDay=day}
+  const day=chromeOrder?conversationGroup(t):recent?'recent':t.updatedAt===null?'unknown':dateFormat.format(new Date(t.updatedAt*1000));
+  if(day!==previousDay){const section=el('section','day-group');section.append(el('h2','day-heading',chromeOrder?day:day==='recent'?'최근 가져온 ChatGPT 대화':day==='unknown'?'날짜 미확인':new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',year:'numeric',month:'long',day:'numeric',weekday:'long'}).format(new Date(t.updatedAt*1000))));group=el('div','rows');group.setAttribute('role','list');section.append(group);$('results').append(section);previousDay=day}
   const web=t.webUrl&&validUrl(t.webUrl,'web');
   const localUrl='codex://threads/'+t.id,local=t.kind==='codex'&&currentDeviceId&&t.devices?.includes(currentDeviceId)&&validUrl(localUrl,'app');
   const row=el('div','row');row.setAttribute('role','listitem');const body=el('div');const content=el(web||local?'a':'span','title',displayTitle(t));
   if(web||local){content.href=web?t.webUrl:localUrl;if(web){content.target='_blank';content.rel='noopener noreferrer'}}
-  const d=t.updatedAt===null?null:new Date(t.updatedAt*1000);const date=el('time','',d?timeFormat.format(d):'—');if(d)date.dateTime=d.toISOString();date.title=d?'마지막 수정일 · 한국 시간':'정확한 날짜 미확인';
-  const meta=el('div','meta');meta.append(el('span','tag',serviceNames[t.kind]||'로컬 작업'),el('span','',t.project||'프로젝트 없음'));for(const name of new Set((t.devices||[]).map(id=>id==='legacy-desktop'?'데스크탑':deviceSnapshots().find(d=>d.deviceId===id)?.deviceName||'추가 기기')))meta.append(el('span','tag',name));if(recent&&t.pinned)meta.append(el('span','tag','고정'));if(t.sourceDate)meta.append(el('span','',' · 수집 당시 표시: '+t.sourceDate));body.append(content,meta);
+  const d=t.updatedAt===null?null:new Date(t.updatedAt*1000);const date=el('time','',d?timeFormat.format(d):'시간 미확인');if(d)date.dateTime=d.toISOString();date.title=d?'마지막 수정일 · 한국 시간':'정확한 날짜 미확인';
+  const meta=el('div','meta');meta.append(el('span','tag',serviceNames[t.kind]||'로컬 작업'),el('span','',t.project||'프로젝트 없음'));for(const name of new Set((t.devices||[]).map(id=>id==='legacy-desktop'?'데스크탑':deviceSnapshots().find(d=>d.deviceId===id)?.deviceName||'추가 기기')))meta.append(el('span','tag',name));if(t.inferredDateLabel)meta.append(el('span','tag','앞뒤 대화의 기존 날짜로 추정'));if((recent||chromeOrder)&&t.pinned)meta.append(el('span','tag','고정'));if(t.sourceDate)meta.append(el('span','',' · 수집 당시 표시: '+t.sourceDate));body.append(content,meta);
   const actions=el('div','actions');const actionLink=(label,url)=>{const a=el('a','',label);a.href=url;a.target='_blank';a.rel='noopener noreferrer';return a};
   if(web)actions.append(actionLink('웹에서 열기',t.webUrl));else if(local){const a=el('a','','Codex에서 열기');a.href=localUrl;actions.append(a)}else actions.append(el('span','no-web-link','해당 PC에서 최신화 후 열기'));
   const edit=el('button','','이름 수정');edit.type='button';edit.disabled=!titlesReady;edit.onclick=()=>editTitle(t,content);actions.append(edit);
@@ -147,7 +150,7 @@ async function collectBrowser(){
   const archive=await splitBrowserArchive(snapshot);
   const envelope=await Promise.all(archive.map(s=>encryptDevice(s,deviceRecipient.publicKey)));
   for(const part of envelope)await acceptDeviceEnvelope(part);
-  selectedService='chatgpt';$('sort').value='desc';$('device').value='';$('query').value='';$('project').value='';$('from').value='';$('to').value='';
+  selectedService='chatgpt';$('sort').value='browser';$('device').value='';$('query').value='';$('project').value='';$('from').value='';$('to').value='';
   composeItems();updateSyncStatus();
   $('cancel-manual').hidden=true;$('manual-status').textContent='대화 목록을 가져왔습니다. 전체 검색을 위해 암호화 저장 중입니다…';
   try{await publishManual(envelope)}catch{throw Error('대화 목록은 가져왔지만 일부 공유 저장에 실패했습니다. 공유 저장 다시 시도를 눌러 주세요.')}
@@ -180,6 +183,6 @@ async function load(){try{
  // No timer, focus, visibility, or online event starts automatic refresh.
 }catch(e){$('error').textContent=e.message;$('error').hidden=false;$('count').textContent='연결 확인 필요'}}
 for(const id of ['query','project','from','to','sort','device'])$(id).addEventListener('input',render);
-$('reset').onclick=()=>{for(const id of ['query','project','from','to','device'])$(id).value='';$('sort').value='desc';render()};$('lock').onclick=()=>location.reload();load();
+$('reset').onclick=()=>{for(const id of ['query','project','from','to','device'])$(id).value='';$('sort').value='browser';render()};$('lock').onclick=()=>location.reload();load();
  $('import-form').onsubmit=async e=>{e.preventDefault();const button=$('import-button');try{if(!extraReady)throw Error('기존 추가 목록을 먼저 복구해야 합니다.');const raw=JSON.parse($('import-list').value);if(!Array.isArray(raw)||!raw.length||raw.length>10000)throw Error('가져올 목록을 확인해 주세요.');const next=new Map(extraItems.map(t=>[t.id,t]));for(const value of raw){const t=normalizeExtra(value);next.set(t.id,t)}button.disabled=true;await saveTitles({items:[...next.values()]},extraStorage);extraItems=[...next.values()];$('import-list').value='';$('import-status').textContent=raw.length+'개 항목을 이 브라우저에 저장했습니다.';composeItems()}catch(error){$('import-status').textContent=error instanceof SyntaxError?'목록 형식을 확인해 주세요.':error.message}finally{button.disabled=false}};
 
