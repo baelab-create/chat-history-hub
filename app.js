@@ -99,7 +99,7 @@ function applyCatalog(data){
  if(!Array.isArray(data.items)||!data.items.length||data.items.some(t=>typeof t.id!=='string'||typeof t.title!=='string'||!Number.isFinite(t.updatedAt)||Math.abs(t.updatedAt)>=8e12))throw Error('목록 형식이 올바르지 않습니다.');
  if(Date.parse(data.collectedAt)<Date.parse(catalogInfo.collectedAt))return;
  baseItems=[...new Map(data.items.map(t=>[t.id,{...t,project:typeof t.project==='string'?t.project:'프로젝트 없음'}])).values()];
- catalogInfo=data;$('coverage').textContent=data.coverage||'수집 범위 확인 필요';composeItems();updateSyncStatus();
+ catalogInfo=data;$('coverage').textContent='Chrome에 불러온 최근·고정 대화 제목과 링크를 가져옵니다. 전체 내역과 정확한 수정일은 포함하지 않습니다.';composeItems();updateSyncStatus();
 }
 function applyPendingCatalog(){if(!pendingCatalog){composeItems();return true;}const data=pendingCatalog;pendingCatalog=null;applyCatalog(data);return true}
 function updateSyncStatus(){
