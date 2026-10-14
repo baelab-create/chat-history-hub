@@ -1,4 +1,4 @@
-import {collectSidebar} from './collector.js';
+import {collectSidebar,advanceSidebar} from './collector.js';
 const HUB='https://baelab-create.github.io/chat-history-hub/';
 const allowedHub=url=>typeof url==='string'&&url.startsWith(HUB);
 chrome.runtime.onMessage.addListener((m,sender,reply)=>{
@@ -13,14 +13,14 @@ chrome.runtime.onMessage.addListener((m,sender,reply)=>{
   }
   if(sender.id!==chrome.runtime.id||!sender.url?.startsWith(chrome.runtime.getURL('review.html')+'?'))throw Error('잘못된 요청입니다.');
   const key='request:'+m.id,request=(await chrome.storage.session.get(key))[key];
-  if(!request||Date.now()-request.created>300000)throw Error('요청이 만료됐습니다. Hub에서 최신화를 다시 눌러 주세요.');
+  if(!request||Date.now()-request.created>1800000)throw Error('요청이 만료됐습니다. Hub에서 최신화를 다시 눌러 주세요.');
   if(m.type==='tabs')return {tabs:(await chrome.tabs.query({url:'https://chatgpt.com/*'})).map(t=>({id:t.id,title:t.title||'ChatGPT'}))};
-  if(m.type==='read'){
+  if(['read','advance','reset-scan'].includes(m.type)){
    const tab=await chrome.tabs.get(m.tabId);
    if(!tab.url?.startsWith('https://chatgpt.com/'))throw Error('ChatGPT 탭을 선택해 주세요.');
-   const [r]=await chrome.scripting.executeScript({target:{tabId:m.tabId},func:collectSidebar});
+   const [r]=await chrome.scripting.executeScript({target:{tabId:m.tabId},func:m.type==='read'?collectSidebar:advanceSidebar,args:m.type==='read'?[]:[{reset:m.type==='reset-scan'}]});
    if(!r?.result)throw Error('목록을 읽지 못했습니다.');
-   return {snapshot:r.result};
+   return m.type==='read'?{snapshot:r.result}:{step:r.result};
   }
   if(m.type==='apply'||m.type==='cancel'){
    const tab=await chrome.tabs.get(request.hubTab);

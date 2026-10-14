@@ -1,4 +1,4 @@
-import {normalizeSnapshot, accumulateDevice} from './collector/metadata.mjs?v=9';
+import {normalizeSnapshot, accumulateDevice} from './collector/metadata.mjs?v=10';
 export function mergeCatalogs(legacy, snapshots) {
   const map=new Map();
   const key=t=>(t.kind==='chatgpt'?'chatgpt':'codex')+':'+t.id;

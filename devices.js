@@ -1,6 +1,6 @@
 import {deviceRecipient} from './vault.js?v=7';
 import {decryptDevice,encryptDevice} from './device-crypto.mjs?v=7';
-import {keepSnapshot,validateRegistry} from './device-catalog.mjs?v=9';
+import {keepSnapshot,validateRegistry} from './device-catalog.mjs?v=10';
 const snapshots=new Map();
 const cachePrefix='chat-history-hub:device-envelope:v1:';
 let busy=false,loadedCache=false;

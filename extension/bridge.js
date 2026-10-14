@@ -10,7 +10,7 @@
   if(m.type!=='collect'||pending.size)return;
   pending.add(m.id);
   chrome.runtime.sendMessage({type:'begin',id:m.id}).then(r=>{if(!r?.ok)throw Error();}).catch(()=>{pending.delete(m.id);window.postMessage({channel:'hub-browser-response-v1',id:m.id,type:'error',error:'확장 프로그램을 다시 연결하려면 페이지를 새로고침해 주세요.'},location.origin)});
-  setTimeout(()=>pending.delete(m.id),300000);
+  setTimeout(()=>pending.delete(m.id),1800000);
  });
  chrome.runtime.onMessage.addListener(m=>{
   if(!allowed()||!pending.has(m.id)||!['result','error'].includes(m.type))return;

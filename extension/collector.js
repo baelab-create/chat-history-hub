@@ -23,6 +23,24 @@ export function collectSidebar(){
   }
  }
  if(![...rows.values()].some(r=>r.rank!==null))throw Error('읽을 수 있는 최근 대화가 없습니다. 로그인과 목록 표시 상태를 확인해 주세요.');
- if(rows.size>500)throw Error('목록이 너무 큽니다. 최근 목록만 펼친 뒤 다시 읽어 주세요.');
+ if(rows.size>50000)throw Error('목록이 너무 큽니다. 한 번에 50,000개까지 읽을 수 있습니다.');
  return {version:1,observedAt:new Date().toISOString(),coverage:'loaded-sidebar-only',items:[...rows.values()]};
+}
+
+// Only operate the observed sidebar's scrolling and its own load-more control.
+export async function advanceSidebar({reset=false}={}){
+ const root=document.querySelector('#app-shell-sidebar');
+ const recent=[...(root?.querySelectorAll('section')||[])].find(s=>/^(최근|Recent|Recents)$/i.test(s.querySelector('button')?.textContent.trim()||''));
+ if(!recent)throw Error('최근 목록 영역이 닫혔습니다. 다시 펼쳐 주세요.');
+ let scroller=recent;
+ while(scroller&&scroller!==root&&!(/auto|scroll/.test(getComputedStyle(scroller).overflowY)&&scroller.scrollHeight>scroller.clientHeight))scroller=scroller.parentElement;
+ if(!scroller)throw Error('목록 스크롤 영역을 확인하지 못했습니다.');
+ if(reset){scroller.scrollTop=0;await new Promise(r=>setTimeout(r,500));return {atBottom:false};}
+ const error=/대화 기록을 불러올 수 없|불러오지 못|unable to load|failed to load/i.test(recent.innerText);
+ const more=[...recent.querySelectorAll('button')].find(b=>/^(더 보기|Show more|Load more)$/i.test(b.textContent.trim())&&b.getClientRects().length);
+ let clicked=false;
+ if(more&&!more.disabled){more.click();clicked=true;}
+ else scroller.scrollBy({top:Math.max(200,scroller.clientHeight*.75),behavior:'instant'});
+ await new Promise(r=>setTimeout(r,1000));
+ return {atBottom:scroller.scrollTop+scroller.clientHeight>=scroller.scrollHeight-4,busy:Boolean(recent.querySelector('[aria-busy="true"],[role="progressbar"]')),clicked,error};
 }

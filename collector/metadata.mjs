@@ -13,7 +13,7 @@ export function normalizeSnapshot(input) {
     const kind=value.kind||'codex';if(!['codex','chatgpt'].includes(kind))throw Error('Invalid source kind');
     const item = {id: value.id, kind, title: value.title.trim(), updatedAt: value.updatedAt, archived: value.archived, project:typeof value.project==='string'?value.project.slice(0,300):'프로젝트 없음'};
     if(input.source==='browser-sidebar'){
-      if(kind!=='chatgpt'||!(value.sidebarRank===null||Number.isInteger(value.sidebarRank)&&value.sidebarRank>=0&&value.sidebarRank<500)||typeof value.pinned!=='boolean'||!validTime(value.browserObservedAt))throw Error('Invalid browser metadata');
+      if(kind!=='chatgpt'||!(value.sidebarRank===null||Number.isInteger(value.sidebarRank)&&value.sidebarRank>=0&&value.sidebarRank<50000)||typeof value.pinned!=='boolean'||!validTime(value.browserObservedAt))throw Error('Invalid browser metadata');
       Object.assign(item,{sidebarRank:value.sidebarRank,pinned:value.pinned,browserObservedAt:value.browserObservedAt});
     }
     if (unique.has(item.kind+':'+item.id)) throw Error('Duplicate record in device snapshot');
@@ -26,6 +26,7 @@ export function normalizeSnapshot(input) {
     cloudMode: ['app-bridge','browser-sidebar'].includes(input.cloudMode)?input.cloudMode:'manual',
     cloudState: ['app-bridge','browser-sidebar'].includes(input.cloudMode)&&input.cloudState==='connected'?'connected':'unavailable',
     sourceError: typeof input.sourceError==='string'&&/^[a-z_]{1,80}$/.test(input.sourceError)?input.sourceError:null,
+    archiveDeviceId: /^[a-f0-9-]{36}$/.test(input.archiveDeviceId||'')?input.archiveDeviceId:null,
     coverage: input.source==='browser-sidebar'?'loaded-sidebar-only':'named-local-threads-and-observed-cloud-titles', completeForDeletion: false,
     items: [...unique.values()].sort((a, b) => b.updatedAt - a.updatedAt || a.id.localeCompare(b.id))};
 }
