@@ -104,7 +104,7 @@ function updateSyncStatus(){
  $('last-collected').textContent='저장된 ChatGPT 마지막 확인 · '+date;
  $('sync-status').textContent=refreshBusy?'저장된 목록을 다시 불러오고 있습니다…':refreshFailed?'일부 저장된 목록에 연결하지 못했습니다. 마지막 정상 목록을 유지합니다.':'수동 최신화 방식입니다. 버튼을 누른 PC에서만 한 번 수집합니다.';
  $('sync-status').dataset.state='warning';
- $('refresh').disabled=refreshBusy;
+ $('manual-sync').setAttribute('aria-disabled',String(refreshBusy||manualBusy));
 }
 async function checkForUpdates(force=false){
  if(refreshBusy||(!force&&Date.now()-lastRefreshAttempt<10000))return;
@@ -115,7 +115,7 @@ async function checkForUpdates(force=false){
    if(document.querySelector('.title-editor'))pendingCatalog=data;else applyCatalog(data);
   }
  }catch{refreshFailed=true}
- finally{await refreshDevices();try{const cloud=await loadCloudDevices();for(const row of cloud.valid)await acceptDeviceEnvelope(row.envelope);if(cloud.failed)refreshFailed=true}catch{refreshFailed=true}composeItems();refreshBusy=false;updateSyncStatus()}
+ finally{try{await refreshDevices()}catch{refreshFailed=true}try{const cloud=await loadCloudDevices();for(const row of cloud.valid)await acceptDeviceEnvelope(row.envelope);if(cloud.failed)refreshFailed=true}catch{refreshFailed=true}composeItems();refreshBusy=false;updateSyncStatus()}
 }
 const outboxKey='chat-history-hub:pending-manual-envelope';
 async function publishManual(envelope){
@@ -128,23 +128,30 @@ async function publishManual(envelope){
 }
 async function collectManual(nonce){
  try{
-  const result=await requestManualCollection(nonce,{signal:manualController.signal});
+  // Start the local request immediately: the launched helper has a bounded lifetime.
+  const [saved,collected]=await Promise.allSettled([checkForUpdates(true),requestManualCollection(nonce,{signal:manualController.signal})]);
+  if(manualController.signal.aborted)throw Error('최신화를 취소했습니다.');
+  if(collected.status==='rejected'){
+   const prefix=saved.status==='fulfilled'&&!refreshFailed?'저장된 목록은 불러왔지만 새 대화는 가져오지 못했습니다. ':'저장된 목록과 새 대화를 모두 확인하지 못했습니다. 기존 목록을 유지합니다. ';
+   throw Error(prefix+(collected.reason?.message||''));
+  }
+  const result=collected.value;
   const snapshot=await acceptDeviceEnvelope(result.envelope);
   currentDeviceId=snapshot.deviceId;try{localStorage.setItem('chat-history-hub:this-device',currentDeviceId)}catch{}
   composeItems();
   $('cancel-manual').hidden=true;$('manual-status').textContent='수집했습니다. 암호화한 목록을 다른 PC와 공유하는 중입니다…';
   try{await publishManual(result.envelope)}catch{throw Error('이 PC 목록은 불러왔지만 다른 PC와 공유하지 못했습니다. ‘공유 저장 다시 시도’를 눌러 주세요.')}
-  $('manual-status').textContent=result.sourceError?`로컬 작업 ${result.localCount}개를 확인하고 공유했습니다. ChatGPT 목록은 확인하지 못했습니다. 앱 실행·로그인 상태를 확인해 주세요.`:
+  $('manual-status').textContent=result.sourceError?`로컬 작업 ${result.localCount}개를 확인하고 공유했습니다. ChatGPT 목록은 확인하지 못했습니다. 이전 ChatGPT 목록을 유지합니다. 최신화가 일부만 완료됐습니다.`:
    `ChatGPT ${result.cloudCount}개${result.localError?' · 로컬 작업 확인 실패':` · 로컬 작업 ${result.localCount}개`}를 확인하고 공유했습니다. 최근 목록과 고정 대화를 확인했으며 전체 내역은 아닙니다.`;
   updateSyncStatus();
  }catch(error){$('manual-status').textContent=error.message||'최신화를 완료하지 못했습니다. 기존 목록은 유지합니다.'}
- finally{manualBusy=false;$('manual-sync').removeAttribute('aria-disabled');$('cancel-manual').hidden=true}
+ finally{manualBusy=false;$('manual-sync').textContent='최신화';$('cancel-manual').hidden=true;updateSyncStatus()}
 }
 $('manual-sync').onclick=e=>{
- if(manualBusy){e.preventDefault();return}
+ if(manualBusy||refreshBusy){e.preventDefault();return}
  const nonce=makeNonce();e.currentTarget.href=invocation(nonce);manualBusy=true;manualController=new AbortController();
- e.currentTarget.setAttribute('aria-disabled','true');$('cancel-manual').hidden=false;
- $('manual-status').textContent='연결 도구를 기다립니다. 앱 열기와 로컬 연결 허용 안내가 나오면 확인해 주세요. 최대 2분 안에 끝납니다.';
+ e.currentTarget.setAttribute('aria-disabled','true');e.currentTarget.textContent='최신화 중…';$('cancel-manual').hidden=false;
+ $('manual-status').textContent='저장된 목록을 불러오고 새 대화를 확인합니다. 앱 열기와 로컬 연결 허용 안내가 나오면 확인해 주세요. 최대 2분 안에 끝납니다.';
  // Keep the native URL launch in this click's user activation. No synthetic input.
  void collectManual(nonce);
 };
@@ -161,7 +168,6 @@ async function load(){try{
  try{titles=await loadTitles()}catch{titlesReady=false;$('error').textContent='저장된 수정 제목을 불러오지 못했습니다. 기존 저장 내용을 보호하기 위해 제목 수정을 잠시 사용할 수 없습니다.';$('error').hidden=false}
  try{const extra=await loadTitles(extraStorage);if(extra.items)extraItems=extra.items.map(normalizeExtra)}catch{extraReady=false;$('error').textContent='추가 목록을 불러오지 못했습니다. 저장된 목록을 보호하기 위해 가져오기를 중지했습니다.';$('error').hidden=false}
  applyCatalog(data);
- $('refresh').onclick=()=>checkForUpdates(true);
  await checkForUpdates(true);
  try{$('retry-share').hidden=!localStorage.getItem(outboxKey)}catch{}
  // Paused after reported interference with normal PC input.
