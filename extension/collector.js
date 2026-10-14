@@ -28,7 +28,7 @@ export function collectSidebar(){
 }
 
 // Only operate the observed sidebar's scrolling and its own load-more control.
-export async function advanceSidebar({reset=false}={}){
+export async function advanceSidebar({reset=false,retry=false}={}){
  const root=document.querySelector('#app-shell-sidebar');
  const recent=[...(root?.querySelectorAll('section')||[])].find(s=>/^(최근|Recent|Recents)$/i.test(s.querySelector('button')?.textContent.trim()||''));
  if(!recent)throw Error('최근 목록 영역이 닫혔습니다. 다시 펼쳐 주세요.');
@@ -36,11 +36,12 @@ export async function advanceSidebar({reset=false}={}){
  while(scroller&&scroller!==root&&!(/auto|scroll/.test(getComputedStyle(scroller).overflowY)&&scroller.scrollHeight>scroller.clientHeight))scroller=scroller.parentElement;
  if(!scroller)throw Error('목록 스크롤 영역을 확인하지 못했습니다.');
  if(reset){scroller.scrollTop=0;await new Promise(r=>setTimeout(r,500));return {atBottom:false};}
- const error=/대화 기록을 불러올 수 없|불러오지 못|unable to load|failed to load/i.test(recent.innerText);
+ const retryButton=[...recent.querySelectorAll('button')].find(b=>/^(다시 시도|Retry|Try again)$/i.test(b.textContent.trim())&&b.getClientRects().length);
  const more=[...recent.querySelectorAll('button')].find(b=>/^(더 보기|Show more|Load more)$/i.test(b.textContent.trim())&&b.getClientRects().length);
  let clicked=false;
- if(more&&!more.disabled){more.click();clicked=true;}
+ if(retry&&retryButton&&!retryButton.disabled){retryButton.click();clicked=true;}
+ else if(more&&!more.disabled){more.click();clicked=true;}
  else scroller.scrollBy({top:Math.max(200,scroller.clientHeight*.75),behavior:'instant'});
- await new Promise(r=>setTimeout(r,1000));
- return {atBottom:scroller.scrollTop+scroller.clientHeight>=scroller.scrollHeight-4,busy:Boolean(recent.querySelector('[aria-busy="true"],[role="progressbar"]')),clicked,error};
+ await new Promise(r=>setTimeout(r,retry?3000:1000));
+ return {atBottom:scroller.scrollTop+scroller.clientHeight>=scroller.scrollHeight-4,busy:Boolean(recent.querySelector('[aria-busy="true"],[role="progressbar"]'))||/채팅 불러오는 중|Loading chats/i.test(recent.innerText),clicked,error:/대화 기록을 불러올 수 없|불러오지 못|unable to load|failed to load/i.test(recent.innerText),retryAvailable:Boolean(retryButton)};
 }

@@ -10,7 +10,7 @@ $('read').onclick=async()=>{
  const tabId=Number($('tabs').value);
  try{
   await call('reset-scan',{tabId});
-  snapshot=await scanHistory({read:async()=>(await call('read',{tabId})).snapshot,advance:async()=>(await call('advance',{tabId})).step,stopped:()=>stop,onProgress:n=>{$('status').textContent=`${n}개 모았습니다. 이전 대화를 계속 불러오는 중입니다…`;}});
+  snapshot=await scanHistory({read:async()=>(await call('read',{tabId})).snapshot,advance:async(extra={})=>(await call('advance',{tabId,...extra})).step,stopped:()=>stop,onProgress:n=>{$('status').textContent=`${n}개 모았습니다. 이전 대화를 계속 불러오는 중입니다…`;}});
   for(const row of snapshot.items){const li=document.createElement('li');li.textContent=(row.pinned?'[고정] ':'')+row.title;$('preview').append(li);}
   const reasons={'no-more-visible':'더 이상 추가 항목이 표시되지 않아 멈췄습니다.','stopped':'요청에 따라 여기까지 읽었습니다.','load-error':'ChatGPT의 추가 로딩 오류로 멈췄습니다.','limit':'50,000개 처리 한도에 도달했습니다.','time-limit':'20분 처리 시간에 도달했습니다.'};
   $('status').textContent=`${snapshot.items.length}개 확인. ${reasons[snapshot.scan.reason]} 보관함·다른 프로젝트 등 계정 전체 내역의 완전한 수집을 보장하지는 않습니다. 정확한 수정일은 제공되지 않습니다. 반영하면 기존 목록에 누적 저장하고 전체 목록에서 검색할 수 있습니다.`;

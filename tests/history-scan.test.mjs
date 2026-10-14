@@ -20,3 +20,4 @@ test('archive partitions are stable across repeated scans and retain all records
  for(const part of subset)for(const item of part.items)assert.ok(all.find(p=>p.deviceId===part.deviceId).items.some(r=>r.id===item.id));
  assert.ok(all.every(p=>p.archiveDeviceId===snapshot.deviceId));
 });
+test('repeated source loading failures retry twice then return partial history',async()=>{let retries=0;const out=await scanHistory({read:async()=>({items:[row(1)]}),advance:async args=>{if(args?.retry)retries++;return {error:true,retryAvailable:true,atBottom:true,busy:false}}});assert.equal(retries,2);assert.equal(out.scan.reason,'load-error');assert.equal(out.items.length,1)});

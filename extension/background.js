@@ -18,7 +18,7 @@ chrome.runtime.onMessage.addListener((m,sender,reply)=>{
   if(['read','advance','reset-scan'].includes(m.type)){
    const tab=await chrome.tabs.get(m.tabId);
    if(!tab.url?.startsWith('https://chatgpt.com/'))throw Error('ChatGPT 탭을 선택해 주세요.');
-   const [r]=await chrome.scripting.executeScript({target:{tabId:m.tabId},func:m.type==='read'?collectSidebar:advanceSidebar,args:m.type==='read'?[]:[{reset:m.type==='reset-scan'}]});
+   const [r]=await chrome.scripting.executeScript({target:{tabId:m.tabId},func:m.type==='read'?collectSidebar:advanceSidebar,args:m.type==='read'?[]:[{reset:m.type==='reset-scan',retry:m.retry===true}]});
    if(!r?.result)throw Error('목록을 읽지 못했습니다.');
    return m.type==='read'?{snapshot:r.result}:{step:r.result};
   }

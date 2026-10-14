@@ -1,6 +1,6 @@
 // Incremental scan: merge every rendered page so virtualized rows are not lost.
 export async function scanHistory({read,advance,onProgress=()=>{},stopped=()=>false,maxItems=50000,maxMs=1200000,now=()=>Date.now()}){
- const rows=new Map(),started=now();let stable=0,rank=0,reason='stopped';
+ const rows=new Map(),started=now();let stable=0,rank=0,retries=0,reason='stopped';
  while(!stopped()){
   let snapshot;try{snapshot=await read()}catch(error){if(!rows.size)throw error;reason='load-error';break;}let added=0;
   for(const item of snapshot.items){
@@ -14,7 +14,8 @@ export async function scanHistory({read,advance,onProgress=()=>{},stopped=()=>fa
   if(now()-started>=maxMs){reason='time-limit';break;}
   if(stopped())break;
   let step;try{step=await advance()}catch{reason='load-error';break;}
-  if(step.error){reason='load-error';break;}
+  if(added)retries=0;
+  if(step.error&&!step.busy){if(step.retryAvailable&&retries<2){retries++;try{await advance({retry:true})}catch{};continue;}reason='load-error';break;}
   stable=step.atBottom&&!step.busy&&!step.clicked&&!added?stable+1:0;
   if(stable>=8){reason='no-more-visible';break;}
  }
