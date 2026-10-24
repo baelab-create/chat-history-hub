@@ -1,17 +1,49 @@
 # Chat History Hub — manual collection
 
-The owner requested collection only after clicking “이 PC에서 최신화”. The old Windows scheduled task and AI heartbeat stay disabled. Do not run the legacy automatic installers or collector/sync.mjs.
+Collection starts only from the user's explicit action. Keep the old scheduled task,
+AI heartbeat and collector/sync.mjs disabled. Page load, focus, online and visibility
+changes must never collect new history.
 
-## Flow
+## Current browser flow (extension 1.2.0)
 
-1. Google/Firebase login unlocks the existing encrypted catalog. Page load reads saved metadata only.
-2. A deliberate click opens chathistoryhub://sync/<random-256-bit-nonce> on the current PC.
-3. A windowless launcher starts a short-lived server bound only to 127.0.0.1:41791. The URL alone does not collect. The server accepts an authenticated POST from the exact Hub origin and nonce. The browser may request permission for local access.
-4. One observation reads the installed app's recent 50 + pinned entries and named local SQLite task metadata. No app navigation, computer use, model calls or conversation body storage. The installed app bridge is version dependent, not a public consumer ChatGPT history API.
-5. The helper returns public-key-encrypted metadata, then exits. It has no Firebase token or GitHub credential requirement. No timer, startup service or scheduled task is installed.
-6. The browser writes ciphertext to private/chatHistoryHub/devices/{deviceId} in the existing owner-only Firebase project. Other devices load it on page open or “공유 목록 불러오기”. No realtime listener or periodic browser refresh is used.
+1. Google/Firebase login unlocks the existing encrypted catalog. The page loads saved
+   metadata from GitHub, browser cache and the existing private Firebase collection.
+2. “수집기 연결 확인” performs a versioned worker handshake only. It cannot collect.
+3. “최신화” opens review in the installed Chrome extension. The user selects their
+   ChatGPT tab and chooses quick visible-recent capture or a bounded history scan.
+4. The serialized collector supports Work's Recent sections and the standard browser
+   history container. It reads rendered titles and conversation links only. Missing
+   or collapsed supported containers fail closed; no body or private API fallback.
+5. “이 목록을 Hub에 반영” validates, shards and encrypts metadata in the signed-in
+   Hub. Existing titles are retained, and search/date filters are preserved.
+6. Encrypted archives and the failed-upload queue use IndexedDB, with legacy
+   localStorage migration/fallback. New captures merge into a pending queue instead
+   of replacing it. Queue writes complete before cloud writes; retries are explicit.
+7. Firebase stores ciphertext under private/chatHistoryHub/devices/{deviceId} with
+   the existing owner-only rules. No other project collections or rules are changed.
+8. “저장 목록 다시 불러오기” reads already-shared records; it does not collect new
+   ChatGPT history. Closing review or cancelling releases the pending request.
 
-GitHub Pages hosts code and the legacy encrypted catalog. No new plaintext titles are published. Existing Firebase owner rules are reused; ledger/dashboard collections are untouched. A failed cloud write preserves the local encrypted result with an explicit retry button. Anonymous reads must remain denied.
+## Updating the installed extension
+
+GitHub Pages deployment does not update an unpacked extension on a user's PC.
+Replace files in its installed directory, reload it in chrome://extensions, then
+reload Hub. The UI rejects an unversioned/old bridge with this specific instruction.
+See setup/browser.html. Build with python3 scripts/package-extension.py.
+
+## Validation
+
+Run npm ci, npm test and python3 scripts/package-extension.py --check. Tests cover
+serialized DOM collection in both layouts, origin/version checks, cancellation,
+retaining history, encrypted storage beyond localStorage quota, failed-upload merge,
+and the complete app against its real HTML with synthetic account/cloud boundaries.
+A push/PR check verifies tests and that the downloaded ZIP matches reviewed source.
+
+node tests/manual-browser.mjs serves a local synthetic UI fixture at port 41792.
+No real account or cloud data is used. Do not claim live Firebase writes, extension
+installation, real account capture or native Mac/Windows validation without observing
+those actions. This repair was tested with synthetic data; existing local helpers
+remain legacy/manual, and are not invoked by the current browser button.
 
 ## Limits
 
@@ -29,6 +61,6 @@ Use Install-Manual-Windows.cmd or sh Install-Manual-Mac.command. Requires Node.j
 
 Windows target: %LOCALAPPDATA%/ChatHistoryHubManual. Mac target: ~/Library/Application Support/ChatHistoryHubManual, with URL handler in ~/Applications. Mac packaging has not been verified on a Mac.
 
-Run node --test tests/*.test.mjs. Verify origin/nonce rejection, exactly one observation, automatic listener shutdown, encryption/tamper checks, preservation of old history, and focused-input protection. Browser checks use an isolated headless browser, never the user's Chrome.
+Run node --test tests/*.test.mjs. Verify origin/nonce rejection, exactly one observation, automatic listener shutdown, encryption/tamper checks, preservation of old history, and focused-input protection. Browser checks use the synthetic fixture, never private account data.
 
 Do not claim a live Firebase write or browser permission flow passed unless observed. Do not turn this manual collector into a scheduled job.

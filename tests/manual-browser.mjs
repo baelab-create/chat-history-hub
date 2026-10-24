@@ -1,56 +1,29 @@
-// Isolated headless UI regression. All account/local-source calls are synthetic.
-import {createRequire} from 'node:module';
+// Local-only browser QA server. Synthetic data; no account, helper or cloud calls.
+// Open the printed localhost URL in an isolated browser and exercise the controls.
 import {createServer} from 'node:http';
 import {readFile} from 'node:fs/promises';
 import {resolve,extname} from 'node:path';
-import assert from 'node:assert/strict';
-import {startManualServer,HUB_ORIGIN} from '../collector/manual-server.mjs';
-const require=createRequire(process.env.HUB_PLAYWRIGHT_ROOT||'C:/Users/user/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/package.json');
-const {chromium}=require('playwright');
-const root=resolve('.');
-const server=createServer(async(req,res)=>{try{const name=new URL(req.url,'http://localhost').pathname;const path=resolve(root,'.'+(name==='/'?'/index.html':name));if(!path.startsWith(root)||path.includes('private')||path.includes('.git'))throw Error();const mime=extname(path)==='.html'?'text/html':'text/javascript';res.setHeader('Content-Type',mime);res.end(await readFile(path))}catch{res.writeHead(404);res.end()}});
-await new Promise(r=>server.listen(0,'127.0.0.1',r));
-let browser,bridge;
-try{
- browser=await chromium.launch({headless:true,channel:'chrome'});
- const page=await browser.newPage({viewport:{width:1300,height:1000}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
- await page.addInitScript(()=>{window.calls=0;window.shared=[];document.addEventListener('click',e=>{if(e.target.id==='manual-sync')e.preventDefault()},true)});
- const uuid='11111111-1111-4111-8111-111111111111';
- const old={id:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',kind:'chatgpt',title:'Example web',updatedAt:1700000000,webUrl:'https://chatgpt.com/c/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'};
- const snapshot={schemaVersion:1,deviceId:uuid,source:'desktop-app',deviceName:'Test PC',collectionMode:'manual',observedAt:new Date().toISOString(),cloudObservedAt:new Date().toISOString(),localObservedAt:new Date().toISOString(),cloudMode:'app-bridge',cloudState:'connected',items:[{...old,archived:false},{id:'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',kind:'codex',title:'Example local',updatedAt:1700000100,archived:false}]};
- await page.route('**/vault.js*',r=>r.fulfill({contentType:'text/javascript',body:`export let deviceRecipient={publicKey:'test'};export async function loadTitles(){return {}};export async function saveTitles(){};export async function refreshCatalog(){return null};export async function unlockCatalog(){document.getElementById('unlock').hidden=true;document.getElementById('catalog').hidden=false;return ${JSON.stringify({items:[old],collectedAt:new Date().toISOString()})}}`}));
- await page.route('**/devices.js*',r=>r.fulfill({contentType:'text/javascript',body:`const saved=[];export const deviceSnapshots=()=>saved;export async function refreshDevices(){};export async function acceptDeviceEnvelope(e){const i=saved.findIndex(x=>x.deviceId===e.deviceId);if(i>=0)saved.splice(i,1);saved.push(e.snapshot);return e.snapshot}`}));
- await page.route('**/cloud-devices.js*',r=>r.fulfill({contentType:'text/javascript',body:`export async function loadCloudDevices(){return {valid:window.shared,failed:0}};export async function saveCloudDevice(envelope){if(window.failSave)throw Error('fixture offline');window.shared=[{envelope,snapshot:envelope.snapshot}]}`}));
- await page.route('**/manual-client.js*',r=>r.fulfill({contentType:'text/javascript',body:`export const makeNonce=()=> 'a'.repeat(64);export const invocation=n=>'chathistoryhub://sync/'+n;export const requestManualCollection=()=>{window.calls++;return new Promise(resolve=>window.complete=()=>resolve({success:true,envelope:{deviceId:'${uuid}',snapshot:${JSON.stringify(snapshot)}},cloudCount:1,localCount:1}))}`}));
- await page.goto(`http://127.0.0.1:${server.address().port}/`);
- await page.waitForFunction(()=>document.querySelector('#count').textContent==='1개 대화');
- assert.equal(await page.evaluate(()=>window.calls),0);
- assert.equal(await page.locator('a.title').getAttribute('href'),old.webUrl);
- await page.locator('#manual-sync').click();await page.waitForFunction(()=>window.complete);
- await page.locator('#query').fill('Example');await page.locator('#query').evaluate(e=>e.setSelectionRange(2,4));
- await page.evaluate(()=>window.complete());await page.waitForFunction(()=>document.querySelector('#manual-status').textContent.includes('확인하고 공유했습니다'));
- assert.deepEqual(await page.locator('#query').evaluate(e=>[document.activeElement===e,e.value,e.selectionStart,e.selectionEnd]),[true,'Example',2,4]);
- assert.equal(await page.locator('#apply-update').isVisible(),true);
- assert.equal(await page.locator('.row').count(),1);
- await page.locator('#apply-update').click();assert.equal(await page.locator('.row').count(),2);
- assert.equal(await page.locator('a.title').filter({hasText:'Example local'}).getAttribute('href'),'codex://threads/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb');
- await page.evaluate(()=>{window.complete=null;window.failSave=true});await page.locator('#manual-sync').click();await page.waitForFunction(()=>window.complete);await page.evaluate(()=>window.complete());
- await page.waitForFunction(()=>document.querySelector('#manual-status').textContent.includes('공유하지 못했습니다'));
- assert.equal(await page.locator('#retry-share').isVisible(),true);assert.ok(await page.evaluate(()=>localStorage.getItem('chat-history-hub:pending-manual-envelope')));
- await page.evaluate(()=>window.failSave=false);await page.locator('#retry-share').click();await page.waitForFunction(()=>document.querySelector('#retry-share').hidden);
- assert.equal(await page.evaluate(()=>localStorage.getItem('chat-history-hub:pending-manual-envelope')),null);
- await page.evaluate(()=>{window.dispatchEvent(new Event('focus'));window.dispatchEvent(new Event('online'));document.dispatchEvent(new Event('visibilitychange'))});
- await page.waitForTimeout(200);assert.equal(await page.evaluate(()=>window.calls),2);assert.deepEqual(errors,[]);
- let observations=0;const nonce='c'.repeat(64);
- bridge=await startManualServer({nonce,port:0,collect:async()=>{observations++;return {success:true,envelope:{ciphertext:'synthetic'}}}});
- const context=await browser.newContext();await context.grantPermissions(['local-network-access'],{origin:HUB_ORIGIN});
- const localPage=await context.newPage();
- await localPage.route(HUB_ORIGIN+'/**',async route=>{
-  if(new URL(route.request().url()).pathname.endsWith('manual-client.js'))await route.fulfill({contentType:'text/javascript',body:(await readFile(resolve(root,'manual-client.js'),'utf8')).replace('127.0.0.1:41791','127.0.0.1:'+bridge.port)});
-  else await route.fulfill({contentType:'text/html',body:'<!doctype html><title>Isolated loopback fixture</title>'});
- });
- await localPage.goto(HUB_ORIGIN+'/hub-test');assert.equal(observations,0);
- const response=await localPage.evaluate(async n=>{const m=await import('/manual-client.js');return m.requestManualCollection(n)},nonce);
- assert.equal(response.success,true);assert.equal(observations,1);await context.close();bridge.close();bridge=null;
- console.log(JSON.stringify({passed:true,source:'synthetic',checks:['no collection on load/focus/online','web/local title navigation','focused input and selection preserved','explicit pending apply','failed upload retained and retried','HTTPS-to-loopback CORS with granted permission'],liveAccountUsed:false}));
-}finally{bridge?.close();await browser?.close();server.closeAllConnections();await new Promise(r=>server.close(r))}
+const root=resolve(new URL('../',import.meta.url).pathname);
+const old={id:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',kind:'chatgpt',title:'기존 대화 · 테스트',updatedAt:1700000000,webUrl:'https://chatgpt.com/c/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'};
+const fixtures={
+ '/vault.js':`import {recipientFromPassword} from './device-crypto.mjs';export const deviceRecipient=await recipientFromPassword('SYNTHETIC QA DATA ONLY');export const loadTitles=async()=>({});export const saveTitles=async()=>{};export const refreshCatalog=async()=>null;export async function unlockCatalog(){document.getElementById('unlock').hidden=true;document.getElementById('catalog').hidden=false;return ${JSON.stringify({items:[old],collectedAt:'2026-10-01T00:00:00Z'})}}`,
+ '/cloud-devices.js':`const rows=new Map();export async function loadCloudDevices(){return {valid:[...rows.values()],failed:0}}export async function saveCloudDevice(envelope){if(document.getElementById('fixture-fail').checked)throw Error('synthetic offline');rows.set(envelope.deviceId,{envelope});}`,
+ '/browser-client.mjs':`export {browserSnapshot} from './browser-client-real.mjs';export const probeBrowserExtension=async()=>({version:'1.2.0'});export function requestBrowserSnapshot({signal,onReady}){onReady?.();return new Promise((resolve,reject)=>{document.getElementById('fixture-complete').disabled=false;const abort=()=>{document.getElementById('fixture-complete').disabled=true;reject(Error('최신화를 취소했습니다.'))};signal.addEventListener('abort',abort,{once:true});document.getElementById('fixture-complete').onclick=()=>{signal.removeEventListener('abort',abort);document.getElementById('fixture-complete').disabled=true;resolve({version:1,observedAt:new Date().toISOString(),coverage:'loaded-sidebar-only',items:[{id:'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',title:'새 대화 · 최신화 테스트',webUrl:'https://chatgpt.com/c/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',rank:0,pinned:false,updatedAt:null}]})}})}`
+};
+const server=createServer(async(req,res)=>{
+ try{
+  let name=new URL(req.url,'http://localhost').pathname;
+  if(name in fixtures){res.setHeader('Content-Type','text/javascript');res.end(fixtures[name]);return;}
+  if(name==='/devices/index.json'){res.setHeader('Content-Type','application/json');res.end('{"version":1,"devices":[]}');return;}
+  if(name==='/devices.js'){
+   res.setHeader('Content-Type','text/javascript');res.end((await readFile(resolve(root,'devices.js'),'utf8')).replace("const bases=['./devices/','https://raw.githubusercontent.com/baelab-create/chat-history-hub/catalog-data/devices/'];","const bases=['./devices/'];"));return;
+  }
+  if(name==='/browser-client-real.mjs')name='/browser-client.mjs';
+  const path=resolve(root,'.'+(name==='/'?'/index.html':name));
+  if(!path.startsWith(root+'/')||path.includes('/private/')||path.includes('/.git/')||path.includes('/node_modules/'))throw Error();
+  let bytes=await readFile(path);
+  if(name==='/')bytes=Buffer.from(bytes.toString().replace('<body>',`<body><aside style="padding:12px;background:#ffe6b3" aria-label="테스트 도구">합성 데이터로만 작동하는 테스트 화면 · <label style="display:inline"><input type="checkbox" id="fixture-fail">공유 실패 재현</label><button id="fixture-complete" disabled>수집 결과 전달</button></aside>`));
+  res.setHeader('Content-Type',extname(path)==='.html'?'text/html; charset=utf-8':extname(path)==='.json'?'application/json':'text/javascript');res.end(bytes);
+ }catch{res.writeHead(404);res.end();}
+});
+server.listen(41792,'0.0.0.0',()=>console.log('Synthetic UI fixture: http://127.0.0.1:41792/'));

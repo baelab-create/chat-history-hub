@@ -1,15 +1,16 @@
-import {collectSidebar,advanceSidebar} from './collector.js';
+import {inspectSidebar} from './collector.js';
 const HUB='https://baelab-create.github.io/chat-history-hub/';
 const allowedHub=url=>typeof url==='string'&&url.startsWith(HUB);
 chrome.runtime.onMessage.addListener((m,sender,reply)=>{
  (async()=>{
-  if(m?.type==='begin'||m?.type==='abort'){
+  if(['ping','begin','abort'].includes(m?.type)){
    if(sender.id!==chrome.runtime.id||!allowedHub(sender.url)||sender.frameId!==0||!sender.tab?.id||!/^[-a-f0-9]{36}$/.test(m.id||''))throw Error('잘못된 요청입니다.');
+   if(m.type==='ping')return {version:chrome.runtime.getManifest().version};
    const key='request:'+m.id,existing=await chrome.storage.session.get(key);
    if(m.type==='abort'){if(existing[key]?.hubTab===sender.tab.id)await chrome.storage.session.remove(key);return {ok:true};}
    if(existing[key])return {ok:true};
    await chrome.storage.session.set({[key]:{hubTab:sender.tab.id,created:Date.now()}});
-   await chrome.tabs.create({url:chrome.runtime.getURL('review.html')+'?request='+m.id});return {ok:true};
+   try{const review=await chrome.tabs.create({url:chrome.runtime.getURL('review.html')+'?request='+m.id});await chrome.storage.session.set({[key]:{hubTab:sender.tab.id,reviewTab:review.id,created:Date.now()}})}catch(e){await chrome.storage.session.remove(key);throw e}return {ok:true};
   }
   if(sender.id!==chrome.runtime.id||!sender.url?.startsWith(chrome.runtime.getURL('review.html')+'?'))throw Error('잘못된 요청입니다.');
   const key='request:'+m.id,request=(await chrome.storage.session.get(key))[key];
@@ -18,7 +19,7 @@ chrome.runtime.onMessage.addListener((m,sender,reply)=>{
   if(['read','advance','reset-scan'].includes(m.type)){
    const tab=await chrome.tabs.get(m.tabId);
    if(!tab.url?.startsWith('https://chatgpt.com/'))throw Error('ChatGPT 탭을 선택해 주세요.');
-   const [r]=await chrome.scripting.executeScript({target:{tabId:m.tabId},func:m.type==='read'?collectSidebar:advanceSidebar,args:m.type==='read'?[]:[{reset:m.type==='reset-scan',retry:m.retry===true}]});
+   const [r]=await chrome.scripting.executeScript({target:{tabId:m.tabId},func:inspectSidebar,args:[{action:m.type==='read'?'read':m.type==='reset-scan'?'reset':'advance',retry:m.retry===true}]});
    if(!r?.result)throw Error('목록을 읽지 못했습니다.');
    return m.type==='read'?{snapshot:r.result}:{step:r.result};
   }
@@ -31,4 +32,12 @@ chrome.runtime.onMessage.addListener((m,sender,reply)=>{
   }
   throw Error('지원하지 않는 요청입니다.');
  })().then(data=>reply({ok:true,...data})).catch(e=>reply({ok:false,error:e.message}));return true;
+});
+// Closing review must release Hub immediately, rather than waiting 30 minutes.
+chrome.tabs.onRemoved.addListener(tabId=>{
+ void (async()=>{for(const [key,request] of Object.entries(await chrome.storage.session.get(null))){
+  if(!key.startsWith('request:')||![request.hubTab,request.reviewTab].includes(tabId))continue;
+  await chrome.storage.session.remove(key);
+  if(tabId===request.reviewTab)await chrome.tabs.sendMessage(request.hubTab,{type:'error',id:key.slice(8),error:'미리보기를 닫았습니다. 최신화를 다시 누르면 새로 시작할 수 있습니다.'}).catch(()=>{});
+ }})().catch(()=>{});
 });

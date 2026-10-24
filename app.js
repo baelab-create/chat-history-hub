@@ -1,11 +1,13 @@
+import {encryptedStore} from './archive-storage.mjs?v=12';
+import {mergePendingEnvelopes} from './share-queue.mjs?v=12';
 import {arrangeConversations,conversationGroup} from './conversation-order.mjs?v=11';
 import {splitBrowserArchive} from './browser-archive.mjs?v=10';
 import {mergeCatalogs} from './device-catalog.mjs?v=10';
 import {collectionStatus} from './sync-status.mjs?v=7';
-import {refreshDevices,deviceSnapshots,acceptDeviceEnvelope} from './devices.js?v=10';
+import {refreshDevices,deviceSnapshots,acceptDeviceEnvelope} from './devices.js?v=12';
 import {unlockCatalog,loadTitles,saveTitles,refreshCatalog} from './vault.js?v=7';
 import {loadCloudDevices,saveCloudDevice} from './cloud-devices.js?v=10';
-import {requestBrowserSnapshot,browserSnapshot} from './browser-client.mjs?v=10';
+import {requestBrowserSnapshot,browserSnapshot,probeBrowserExtension} from './browser-client.mjs?v=12';
 import {deviceRecipient} from './vault.js?v=7';
 import {encryptDevice} from './device-crypto.mjs?v=7';
 import {createRenderGate} from './render-guard.mjs?v=7';
@@ -113,9 +115,11 @@ function updateSyncStatus(){
  const collected=Date.parse(state.cloudObservedAt);
  const date=Number.isFinite(collected)?new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',month:'long',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false}).format(collected):'확인 필요';
  $('last-collected').textContent='저장된 ChatGPT 마지막 확인 · '+date;
- $('sync-status').textContent=refreshBusy?'저장된 목록을 다시 불러오고 있습니다…':refreshFailed?'일부 저장된 목록에 연결하지 못했습니다. 마지막 정상 목록을 유지합니다.':'최신화를 누르면 Chrome에서 이전 대화까지 불러와 누적 저장합니다.';
- $('sync-status').dataset.state='warning';
+ $('sync-status').textContent=refreshBusy?'저장된 목록을 다시 불러오고 있습니다…':refreshFailed?'일부 저장된 목록에 연결하지 못했습니다. 마지막 정상 목록을 유지합니다.':'최신화에서 최근 목록을 빠르게 가져오거나 과거 대화까지 읽을 수 있습니다.';
+ $('sync-status').dataset.state=refreshFailed?'warning':'ok';
  $('manual-sync').setAttribute('aria-disabled',String(refreshBusy||manualBusy));
+ $('reload-saved').disabled=refreshBusy||manualBusy;
+ $('retry-share').disabled=refreshBusy||manualBusy;
 }
 async function checkForUpdates(force=false){
  if(refreshBusy||(!force&&Date.now()-lastRefreshAttempt<10000))return;
@@ -131,13 +135,17 @@ async function checkForUpdates(force=false){
 const outboxKey='chat-history-hub:pending-manual-envelope';
 let pendingArchive=null;
 async function publishManual(envelope){
- pendingArchive=envelope;
- try{localStorage.setItem(outboxKey,JSON.stringify(envelope))}catch{}
+ pendingArchive=await mergePendingEnvelopes(pendingArchive||await encryptedStore.get(outboxKey),envelope,deviceRecipient);
  $('retry-share').hidden=false;
- const parts=Array.isArray(envelope)?envelope:[envelope];
- for(let i=0;i<parts.length;i+=8){const results=await Promise.allSettled(parts.slice(i,i+8).map(async part=>{await saveCloudDevice(part);await acceptDeviceEnvelope(part)}));if(results.some(r=>r.status==='rejected'))throw Error('일부 목록 저장 실패');}
- pendingArchive=null;
- try{localStorage.removeItem(outboxKey)}catch{}
+ // Persist the entire retry queue before any network write.
+ await encryptedStore.set(outboxKey,pendingArchive);
+ const parts=pendingArchive;
+ for(let i=0;i<parts.length;i+=8){
+  $('manual-status').textContent=`공유 저장 중 · ${Math.min(i,parts.length)}/${parts.length} 묶음`;
+  const results=await Promise.allSettled(parts.slice(i,i+8).map(async part=>{await saveCloudDevice(part);await acceptDeviceEnvelope(part)}));
+  if(results.some(r=>r.status==='rejected'))throw Error('일부 목록 저장 실패');
+ }
+ await encryptedStore.remove(outboxKey);pendingArchive=null;
  $('retry-share').hidden=true;
 }
 async function collectBrowser(){
@@ -146,15 +154,18 @@ async function collectBrowser(){
   if(manualController.signal.aborted)throw Error('최신화를 취소했습니다.');
   if(collected.status==='rejected')throw Error((saved.status==='fulfilled'&&!refreshFailed?'저장된 목록은 불러왔지만 새 대화는 가져오지 못했습니다. ':'저장된 목록과 새 대화를 모두 확인하지 못했습니다. 기존 목록을 유지합니다. ')+(collected.reason?.message||''));
   const key='chat-history-hub:browser-device';let id=localStorage.getItem(key);if(!id){id=crypto.randomUUID();localStorage.setItem(key,id)}
+  if(!deviceRecipient)throw Error('이 브라우저에서 암호화를 준비하지 못했습니다. 최신 Chrome에서 다시 로그인해 주세요.');
   const snapshot=browserSnapshot(collected.value,id);
   const archive=await splitBrowserArchive(snapshot);
   const envelope=await Promise.all(archive.map(s=>encryptDevice(s,deviceRecipient.publicKey)));
-  for(const part of envelope)await acceptDeviceEnvelope(part);
-  selectedService='chatgpt';$('sort').value='browser';$('device').value='';$('query').value='';$('project').value='';$('from').value='';$('to').value='';
+  if(manualController.signal.aborted)throw Error('최신화를 취소했습니다.');
+  // Keep the user's search, filters, focus and cursor while the result arrives.
+  const cached=await Promise.allSettled(envelope.map(acceptDeviceEnvelope));
+  const cacheFailed=cached.some(r=>r.status==='rejected');
   composeItems();updateSyncStatus();
   $('cancel-manual').hidden=true;$('manual-status').textContent='대화 목록을 가져왔습니다. 전체 검색을 위해 암호화 저장 중입니다…';
-  try{await publishManual(envelope)}catch{throw Error('대화 목록은 가져왔지만 일부 공유 저장에 실패했습니다. 공유 저장 다시 시도를 눌러 주세요.')}
-  $('manual-status').textContent=`ChatGPT ${snapshot.items.length}개를 가져와 저장했습니다. 저장된 전체 대화에서 검색할 수 있습니다. 정확한 수정일은 새로 수집하지 않습니다.`;
+  try{await publishManual(envelope)}catch{throw Error('대화 목록은 가져왔지만 일부 공유 저장에 실패했습니다. 공유 저장 다시 시도를 눌러 주세요.'+(cacheFailed?' 브라우저 저장 공간도 확인해 주세요. 이 탭을 닫지 마세요.':''))}
+  $('manual-status').textContent=`ChatGPT ${snapshot.items.length}개를 가져와 저장했습니다. 저장된 전체 대화에서 검색할 수 있습니다. 검색·날짜 필터 때문에 새 항목이 안 보이면 초기화를 눌러 주세요. 정확한 수정일은 새로 수집하지 않습니다.`;
  }catch(e){$('manual-status').textContent=e.message||'가져오기에 실패했습니다. 기존 목록은 유지합니다.'}
  finally{manualBusy=false;$('manual-sync').textContent='최신화';$('cancel-manual').hidden=true;updateSyncStatus()}
 }
@@ -165,11 +176,19 @@ $('manual-sync').onclick=e=>{
 };
 $('cancel-manual').onclick=()=>manualController?.abort();
 $('apply-update').onclick=()=>{if(pendingCatalog){const data=pendingCatalog;pendingCatalog=null;applyCatalog(data)}renderGate.apply()};
-$('retry-share').onclick=async()=>{
- const button=$('retry-share');button.disabled=true;
- try{const raw=localStorage.getItem(outboxKey);if(!pendingArchive&&!raw)throw Error('다시 공유할 목록이 없습니다.');await publishManual(pendingArchive||JSON.parse(raw));$('manual-status').textContent='다른 PC에서도 볼 수 있도록 공유 저장을 완료했습니다.'}
- catch(e){$('manual-status').textContent='공유 저장 실패: '+e.message}
+$('reload-saved').onclick=()=>{if(!manualBusy)void checkForUpdates(true)};
+$('check-extension').onclick=async()=>{
+ const button=$('check-extension');button.disabled=true;$('extension-status').textContent='수집기 연결 확인 중…';
+ try{const result=await probeBrowserExtension();$('extension-status').textContent=`수집기 ${result.version} 연결됨 · 최신화를 눌러 대화를 가져오세요.`}
+ catch(e){$('extension-status').textContent=e.message}
  finally{button.disabled=false}
+};
+$('retry-share').onclick=async()=>{
+ if(manualBusy||refreshBusy)return;
+ manualBusy=true;updateSyncStatus();
+ try{const raw=pendingArchive||await encryptedStore.get(outboxKey);if(!raw)throw Error('다시 공유할 목록이 없습니다.');await publishManual(raw);composeItems();$('manual-status').textContent='다른 PC에서도 볼 수 있도록 공유 저장을 완료했습니다.'}
+ catch(e){$('manual-status').textContent='공유 저장 실패: '+e.message}
+ finally{manualBusy=false;updateSyncStatus()}
 };
 async function load(){try{
  const data=await unlockCatalog();if(!Array.isArray(data.items))throw Error('대화 목록 형식을 확인할 수 없습니다.');
@@ -178,7 +197,7 @@ async function load(){try{
  applyCatalog(data);
  await checkForUpdates(true);
  if(deviceSnapshots().some(s=>s.source==='browser-sidebar')){selectedService='chatgpt';composeItems()}
- try{$('retry-share').hidden=!localStorage.getItem(outboxKey)}catch{}
+ try{pendingArchive=await encryptedStore.get(outboxKey)||null;$('retry-share').hidden=!pendingArchive;if(pendingArchive){for(const part of Array.isArray(pendingArchive)?pendingArchive:[pendingArchive])await acceptDeviceEnvelope(part);composeItems();updateSyncStatus();$('manual-status').textContent='이전에 공유하지 못한 목록이 남아 있습니다. 공유 저장 다시 시도를 눌러 주세요.'}}catch{$('manual-status').textContent='이전에 저장한 목록을 읽지 못했습니다. 브라우저 저장 공간을 확인해 주세요.'}
  // Paused after reported interference with normal PC input.
  // No timer, focus, visibility, or online event starts automatic refresh.
 }catch(e){$('error').textContent=e.message;$('error').hidden=false;$('count').textContent='연결 확인 필요'}}
