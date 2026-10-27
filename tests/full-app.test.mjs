@@ -38,12 +38,12 @@ for(const mode of ['extension','bookmark','export','export-success','bookmark-da
   unlockCatalog:async()=>({collectedAt:'2026-10-01T00:00:00Z',items:[{id,title:'old title',kind:'chatgpt',updatedAt:1700000000,webUrl:'https://chatgpt.com/c/'+id}]}),loadTitles:async()=>({}),saveTitles:async()=>{},refreshCatalog:async()=>null,
   deviceSnapshots:()=>[...cache.values()],refreshDevices:async()=>{},loadCloudDevices:async()=>({valid:[...cloud.values()].map(envelope=>({envelope})),failed:0}),
   acceptDeviceEnvelope:async envelope=>{cache.set(envelope.deviceId,keepSnapshot(cache.get(envelope.deviceId),await decryptDevice(envelope,deviceRecipient)))},
-  saveCloudDevice:async envelope=>{if(fail)throw Error('offline');cloud.set(envelope.deviceId,envelope)},probeBrowserExtension:async()=>({version:'1.3.0'}),
+  saveCloudDevice:async envelope=>{if(fail)throw Error('offline');cloud.set(envelope.deviceId,envelope)},probeBrowserExtension:async()=>({version:'1.4.0'}),
   requestBrowserSnapshot:({onReady})=>{collections++;onReady?.();return new Promise(resolve=>{complete=()=>resolve({version:1,coverage:'loaded-sidebar-only',observedAt:new Date().toISOString(),items:[{id,title:'new title',webUrl:'https://chatgpt.com/c/'+id,rank:0,pinned:false,updatedAt:null}]})})},location:{reload(){}}
  });
  vm.runInContext(source,context);await wait(()=>nodes('manual-sync').getAttribute('aria-disabled')==='false');
  assert.equal(collections,0);assert.equal(nodes('count').textContent,'1개 대화');assert.equal(nodes('results').querySelector('a.title').textContent,'old title');
- await nodes('check-extension').onclick();assert.match(nodes('extension-status').textContent,/1.3.0/);assert.equal(collections,0);
+ await nodes('check-extension').onclick();assert.match(nodes('extension-status').textContent,/1.4.0/);assert.equal(collections,0);
  if(viaExport){
   Object.defineProperty(nodes('export-file'),'files',{value:[new File([JSON.stringify([{id,title:'new title',create_time:Date.parse('2026-10-24T15:30:00Z')/1000,update_time:Date.parse('2026-10-25T15:30:00Z')/1000,mapping:{privateBody:'DO NOT STORE BODY'}}])],'conversations.json')]});
   await nodes('export-file').onchange();assert.equal(cloud.size,0);assert.equal(cache.size,0);assert.match(nodes('export-status').textContent,/대화 1개/);
@@ -75,7 +75,7 @@ for(const mode of ['extension','bookmark','export','export-success','bookmark-da
   nodes('reset').onclick();assert.equal(nodes('sort').value,'desc');
  }else{
   nodes('date-basis').value='created';nodes('date-basis').dispatchEvent(new window.Event('input'));
-  assert.equal(nodes('date-help').hidden,false);assert.match(nodes('date-help-count').textContent,/시작일이 없는 대화 1개/);
+  assert.equal(nodes('date-help').hidden,false);assert.match(nodes('date-help-count').textContent,/날짜 미확인 1개/);
   nodes('to').value='2026-10-27';nodes('to').dispatchEvent(new window.Event('input'));
   assert.equal(nodes('count').textContent,'0개 대화');assert.match(nodes('date-filter-note').textContent,/1개는.*제외/);nodes('reset').onclick();
  }

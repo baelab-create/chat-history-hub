@@ -1,26 +1,27 @@
-export const minimumExtensionVersion="1.3.0";
+export const minimumExtensionVersion="1.4.0";
 export const requestBrowserSnapshot=options=>exchange({...options,collect:true});
 export const probeBrowserExtension=options=>exchange({...options,collect:false});
-function exchange({signal,onReady,collect}={}){
+function exchange({signal,onReady,onProgress,collect,mode='quick'}={}){
  return new Promise((resolve,reject)=>{
   const id=crypto.randomUUID(),origin=location.origin;let ready=false;
   let timer;
   const cleanup=()=>{clearTimeout(timer);window.removeEventListener('message',receive);signal?.removeEventListener('abort',abort)};
-  const fail=message=>{if(ready)window.postMessage({channel:'hub-browser-v1',type:'abort',id},origin);cleanup();reject(Error(message))};
+  const fail=(message,code)=>{if(ready)window.postMessage({channel:'hub-browser-v1',type:'abort',id},origin);cleanup();reject(Object.assign(Error(message),{code}))};
   const abort=()=>fail('최신화를 취소했습니다.');
   const receive=event=>{
    const m=event.data;if(event.source!==window||event.origin!==origin||m?.channel!=='hub-browser-response-v1'||m.id!==id)return;
    if(m.type==='ready'&&!ready){
     const parts=typeof m.version==='string'?m.version.split('.').map(Number):[];
-    if(parts.length!==3||parts.some(n=>!Number.isInteger(n))||parts[0]<1||(parts[0]===1&&parts[1]<3)){fail('설치된 수집기가 이전 버전입니다. 날짜를 읽으려면 설치·업데이트 안내에서 1.3.0 이상으로 교체한 뒤 이 페이지를 새로고침해 주세요.');return;}
+    if(parts.length!==3||parts.some(n=>!Number.isInteger(n))||parts[0]<1||(parts[0]===1&&parts[1]<4)){fail('설치된 수집기가 이전 버전입니다. 한 번 클릭으로 최신화하려면 설치·업데이트 안내에서 1.4.0 이상으로 교체한 뒤 이 페이지를 새로고침해 주세요.','EXTENSION_UPDATE');return;}
     if(!collect){cleanup();resolve({version:m.version});return;}
-    ready=true;clearTimeout(timer);timer=setTimeout(()=>fail('미리보기 시간이 만료됐습니다. 최신화를 다시 눌러 주세요.'),1800000);onReady?.({version:m.version});window.postMessage({channel:'hub-browser-v1',type:'collect',id},origin)}
+    ready=true;clearTimeout(timer);timer=setTimeout(()=>fail('최신화 시간이 만료됐습니다. 다시 눌러 주세요.','TIMEOUT'),mode==='review'?1800000:90000);onReady?.({version:m.version});window.postMessage({channel:'hub-browser-v1',type:'collect',id,mode},origin)}
+   else if(ready&&m.type==='progress'){if(typeof m.message==='string')onProgress?.(m.message.slice(0,200))}
    else if(ready&&m.type==='result'){cleanup();resolve(m.snapshot)}
-   else if(m.type==='error')fail(typeof m.error==='string'?m.error.slice(0,300):'브라우저 연결을 확인해 주세요.');
+   else if(m.type==='error')fail(typeof m.error==='string'?m.error.slice(0,300):'브라우저 연결을 확인해 주세요.',m.code);
   };
   if(signal?.aborted){abort();return;}
   window.addEventListener('message',receive);signal?.addEventListener('abort',abort,{once:true});
-  timer=setTimeout(()=>fail('Chrome용 최근 목록 확장 프로그램이 필요합니다. 아래 설치 안내를 확인하고, 설치 후 이 페이지를 새로고침해 주세요.'),5000);
+  timer=setTimeout(()=>fail('최신화 연결을 한 번 설정해 주세요. 확장 프로그램 설치 후 이 페이지를 새로고침하면 사용할 수 있습니다.','EXTENSION_MISSING'),2500);
   window.postMessage({channel:'hub-browser-v1',type:'ping',id},origin);
  });
 }

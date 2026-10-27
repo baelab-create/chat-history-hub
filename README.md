@@ -4,27 +4,37 @@ Collection starts only from the user's explicit action. Keep the old scheduled t
 AI heartbeat and collector/sync.mjs disabled. Page load, focus, online and visibility
 changes must never collect new history.
 
-## Current browser flow (extension 1.3.0)
+## Current browser flow (extension 1.4.0)
 
-1. Google/Firebase login unlocks the existing encrypted catalog. The page loads saved
-   metadata from GitHub, browser cache and the existing private Firebase collection.
-2. “수집기 연결 확인” performs a versioned worker handshake only. It cannot collect.
-3. “최신화” opens review in the installed Chrome extension. The user selects their
-   ChatGPT tab and chooses quick visible-recent capture or a bounded history scan.
-4. The serialized collector supports Work's Recent sections and the standard browser
-   history container. The DOM stage reads rendered titles and conversation links.
-   A separate MAIN-world stage reads allowlisted date metadata from committed React
-   owners of those visible rows and the currently open chat. Missing or collapsed
-   supported containers fail closed; no body text, cookies, tokens or private APIs.
-5. “이 목록을 Hub에 반영” validates, shards and encrypts metadata in the signed-in
-   Hub. Existing titles are retained, and search/date filters are preserved.
-6. Encrypted archives and the failed-upload queue use IndexedDB, with legacy
-   localStorage migration/fallback. New captures merge into a pending queue instead
-   of replacing it. Queue writes complete before cloud writes; retries are explicit.
-7. Firebase stores ciphertext under private/chatHistoryHub/devices/{deviceId} with
-   the existing owner-only rules. No other project collections or rules are changed.
-8. “저장 목록 다시 불러오기” reads already-shared records; it does not collect new
-   ChatGPT history. Closing review or cancelling releases the pending request.
+1. Google/Firebase login unlocks existing encrypted metadata. Page load only reads
+   saved records; no new ChatGPT capture starts without an explicit action.
+2. “최신화” uses the versioned bridge to start a quick refresh with no review step.
+   The extension creates its own inactive ChatGPT home tab, waits at most 45 seconds
+   for the sidebar, opens only recognized sidebar controls if needed, and reads the
+   recent titles, URLs and allowlisted React dates. No cookies, body text or APIs.
+   This deliberately loads a fresh page instead of reloading a user's draft tab.
+3. Hub validates, encrypts, accumulates and saves that result automatically. Search
+   and date filters remain intact; the ChatGPT service is shown. Storage failures
+   retain an encrypted IndexedDB outbox for explicit retry, before cloud writes.
+4. The temporary tab closes only if it stayed inactive/unvisited and is still at
+   the exact created home URL. Login tabs and user-visited tabs are kept. Login or
+   unsupported page layouts return actionable errors, never a false success.
+5. An abort or closed Hub invalidates the worker request. Checks before capture and
+   delivery prevent cancelled results from reaching persistence. No other tabs are
+   navigated or closed. There are no scheduled/focus/visibility-triggered captures.
+6. “설정 및 가져오기” holds connection/update instructions, device filters, date
+   basis, export/bookmark fallback and the optional review/history scan. Only this
+   advanced path asks users to select a ChatGPT tab and apply a preview.
+7. “저장 목록 다시 불러오기” only reads existing records. A connection probe only
+   checks the extension version. Neither initiates collection.
+8. Firebase still stores ciphertext under private/chatHistoryHub/devices/{deviceId}
+   with the existing owner-only rules. No permissions or collection rules changed.
+
+This quick refresh is a partial, accumulating recent list for the current ChatGPT
+browser account/workspace, not a full-account history sync. The user supplied a
+screenshot showing 37 dates captured by 1.3; the NEW automatic 1.4 flow has only
+synthetic validation, not a live signed-in Chrome test. Installing/updating the
+unpacked extension is a one-time user step; site deployment cannot perform it.
 
 ## Optional bookmark capture (no extension installation)
 
@@ -130,4 +140,4 @@ account history. Supported sidebar prop shapes and both message layouts are cove
 by synthetic fixtures only. A real signed-in ChatGPT capture has NOT been validated.
 The page may not expose dates for every loaded row. Report missing dates instead of
 claiming a full account sync. Existing bookmarks contain old embedded code and must
-be replaced once; existing unpacked extensions must be updated once to 1.3.0.
+be replaced once; existing unpacked extensions must be updated once to 1.4.0 for one-click refresh.

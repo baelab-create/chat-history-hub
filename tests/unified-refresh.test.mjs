@@ -3,11 +3,11 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import vm from 'node:vm';
 const source=await readFile(new URL('../app.js',import.meta.url),'utf8');
-function fixture({collectionError,saveError,readError}={}){
+function fixture({collectionError,saveError,readError,errorCode}={}){
  const nodes=new Map(),storage=new Map(),calls={read:0,collect:0,save:0};
  const $=id=>{if(!nodes.has(id))nodes.set(id,{textContent:'',dataset:{},hidden:false,setAttribute(k,v){this[k]=v},removeAttribute(k){delete this[k]}});return nodes.get(id)};
  let finish;
- const context=vm.createContext({$,Date,Intl,AbortController,Promise,Error,JSON,crypto:{randomUUID:()=> '11111111-1111-4111-8111-111111111111'},deviceRecipient:{publicKey:'test'},encryptDevice:async()=>({}),splitBrowserArchive:async s=>[s],browserSnapshot:()=>({items:[{}]}),mergePendingEnvelopes:async(a,b)=>b,encryptedStore:{get:async k=>storage.has(k)?JSON.parse(storage.get(k)):null,set:async(k,v)=>storage.set(k,JSON.stringify(v)),remove:async k=>storage.delete(k)},clearBookmarkImport(){},selectedService:'all',localStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)},collectionStatus:()=>({cloudObservedAt:'2026-10-13T11:07:00Z'}),deviceSnapshots:()=>[],refreshCatalog:async()=>null,refreshDevices:async()=>{},loadCloudDevices:async()=>{calls.read++;if(readError)throw Error('offline');return {valid:[]}},acceptDeviceEnvelope:async()=>({deviceId:'test'}),composeItems(){},applyCatalog(){},document:{querySelector:()=>null},saveCloudDevice:async()=>{calls.save++;if(saveError)throw Error('offline')},requestBrowserSnapshot:()=>{calls.collect++;return new Promise((resolve,reject)=>{finish=()=>collectionError?reject(Error('helper unavailable')):resolve({items:[{}]})})}});
+ const context=vm.createContext({$,Date,Intl,AbortController,Promise,Error,JSON,crypto:{randomUUID:()=> '11111111-1111-4111-8111-111111111111'},deviceRecipient:{publicKey:'test'},encryptDevice:async()=>({}),splitBrowserArchive:async s=>[s],browserSnapshot:()=>({items:[{}]}),mergePendingEnvelopes:async(a,b)=>b,encryptedStore:{get:async k=>storage.has(k)?JSON.parse(storage.get(k)):null,set:async(k,v)=>storage.set(k,JSON.stringify(v)),remove:async k=>storage.delete(k)},clearBookmarkImport(){},selectedService:'all',localStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)},collectionStatus:()=>({cloudObservedAt:'2026-10-13T11:07:00Z'}),deviceSnapshots:()=>[],refreshCatalog:async()=>null,refreshDevices:async()=>{},loadCloudDevices:async()=>{calls.read++;if(readError)throw Error('offline');return {valid:[]}},acceptDeviceEnvelope:async()=>({deviceId:'test'}),composeItems(){},applyCatalog(){},document:{querySelector:()=>null},saveCloudDevice:async()=>{calls.save++;if(saveError)throw Error('offline')},requestBrowserSnapshot:()=>{calls.collect++;return new Promise((resolve,reject)=>{finish=()=>collectionError?reject(Object.assign(Error('helper unavailable'),{code:errorCode})):resolve({items:[{}]})})}});
  vm.runInContext('let catalogInfo={},pendingCatalog=null,refreshBusy=false,lastRefreshAttempt=0,refreshFailed=false,manualBusy=false,manualController,currentDeviceId,bookmarkSnapshot=null,exportPreview=null,exportReading=false;',context);
  vm.runInContext(source.slice(source.indexOf('function updateSyncStatus(){'),source.indexOf("$('cancel-manual').onclick")),context);
  const click=()=>{const e={currentTarget:$('manual-sync'),preventDefault(){this.prevented=true}};$('manual-sync').onclick(e);return e};
@@ -35,4 +35,12 @@ test('collection preserves search and date filters typed while review is open',a
 });
 test('cancel after review starts prevents sharing and permits a later retry',async()=>{
  const f=fixture();f.click();vm.runInContext('manualController.abort()',f.context);await f.settle();assert.equal(f.calls.save,0);assert.match(f.$('manual-status').textContent,/취소/);assert.equal(f.$('manual-sync')['aria-disabled'],'false');
+});
+
+test('a missing extension shows setup next to refresh without reporting collection success',async()=>{
+ const f=fixture({collectionError:true,errorCode:'EXTENSION_MISSING'});f.click();await f.settle();
+ assert.equal(f.$('connection-help').hidden,false);assert.equal(f.$('connection-action').href,'./setup/browser.html');assert.equal(f.calls.save,0);assert.equal(f.$('manual-status').dataset.state,'error');
+});
+test('login failure leads to ChatGPT instead of reinstall instructions',async()=>{
+ const f=fixture({collectionError:true,errorCode:'LOGIN_REQUIRED'});f.click();await f.settle();assert.equal(f.$('connection-action').href,'https://chatgpt.com/');assert.equal(f.calls.save,0);
 });

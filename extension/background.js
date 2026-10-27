@@ -1,3 +1,4 @@
+import {quickSync} from './quick-sync.js';
 import {inspectSidebar} from './collector.js';
 import {readReactDates,withReactDates} from './react-dates.js';
 const HUB='https://baelab-create.github.io/chat-history-hub/';
@@ -10,12 +11,23 @@ chrome.runtime.onMessage.addListener((m,sender,reply)=>{
    const key='request:'+m.id,existing=await chrome.storage.session.get(key);
    if(m.type==='abort'){if(existing[key]?.hubTab===sender.tab.id)await chrome.storage.session.remove(key);return {ok:true};}
    if(existing[key])return {ok:true};
-   await chrome.storage.session.set({[key]:{hubTab:sender.tab.id,created:Date.now()}});
+   await chrome.storage.session.set({[key]:{hubTab:sender.tab.id,created:Date.now(),mode:m.mode==='quick'?'quick':'review'}});
+   if(m.mode==='quick'){
+    const check=async()=>{
+     const active=(await chrome.storage.session.get(key))[key];
+     if(!active||active.hubTab!==sender.tab.id)throw Object.assign(Error('최신화를 취소했습니다.'),{code:'CANCELLED'});
+     const hub=await chrome.tabs.get(sender.tab.id);if(!allowedHub(hub.url))throw Error('대화 목록 페이지가 닫혔습니다.');
+    };
+    try{
+     const snapshot=await quickSync({chrome,hubTab:sender.tab,check,progress:message=>chrome.tabs.sendMessage(sender.tab.id,{type:'progress',id:m.id,message})});
+     await check();await chrome.tabs.sendMessage(sender.tab.id,{type:'result',id:m.id,snapshot});return {ok:true};
+    }finally{await chrome.storage.session.remove(key);}
+   }
    try{const review=await chrome.tabs.create({url:chrome.runtime.getURL('review.html')+'?request='+m.id});await chrome.storage.session.set({[key]:{hubTab:sender.tab.id,reviewTab:review.id,created:Date.now()}})}catch(e){await chrome.storage.session.remove(key);throw e}return {ok:true};
   }
-  if(sender.id!==chrome.runtime.id||!sender.url?.startsWith(chrome.runtime.getURL('review.html')+'?'))throw Error('잘못된 요청입니다.');
+  if(sender.id!==chrome.runtime.id||sender.url!==chrome.runtime.getURL('review.html')+'?request='+m.id)throw Error('잘못된 요청입니다.');
   const key='request:'+m.id,request=(await chrome.storage.session.get(key))[key];
-  if(!request||Date.now()-request.created>1800000)throw Error('요청이 만료됐습니다. Hub에서 최신화를 다시 눌러 주세요.');
+  if(!request||request.mode==='quick'||(sender.tab&&request.reviewTab!==sender.tab.id)||Date.now()-request.created>1800000)throw Error('요청이 만료됐습니다. Hub에서 최신화를 다시 눌러 주세요.');
   if(m.type==='tabs')return {tabs:(await chrome.tabs.query({url:'https://chatgpt.com/*'})).map(t=>({id:t.id,title:t.title||'ChatGPT'}))};
   if(['read','advance','reset-scan'].includes(m.type)){
    const tab=await chrome.tabs.get(m.tabId);
@@ -34,7 +46,7 @@ chrome.runtime.onMessage.addListener((m,sender,reply)=>{
    await chrome.tabs.update(request.hubTab,{active:true});return {ok:true};
   }
   throw Error('지원하지 않는 요청입니다.');
- })().then(data=>reply({ok:true,...data})).catch(e=>reply({ok:false,error:e.message}));return true;
+ })().then(data=>reply({ok:true,...data})).catch(e=>reply({ok:false,error:e.message,code:e.code}));return true;
 });
 // Closing review must release Hub immediately, rather than waiting 30 minutes.
 chrome.tabs.onRemoved.addListener(tabId=>{

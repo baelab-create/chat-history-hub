@@ -84,8 +84,8 @@ test('extension reads date metadata in MAIN world and returns the same validated
  const source=(await readFile(new URL('../extension/background.js',import.meta.url),'utf8')).replace(/^import .*;\n/gm,'');
  const calls=[];let receive;
  const raw={version:1,coverage:'loaded-sidebar-only',observedAt:new Date().toISOString(),items:[{id,title:'Test',webUrl:'https://chatgpt.com/c/'+id,updatedAt:null,rank:0,pinned:false}]};
- const context={Date,Map,Error,Promise,inspectSidebar:()=>{},readReactDates,withReactDates,chrome:{runtime:{id:'test',getURL:p=>'chrome-extension://test/'+p,onMessage:{addListener:fn=>receive=fn}},storage:{session:{get:async()=>({['request:'+id]:{hubTab:1,created:Date.now()}})}},tabs:{get:async()=>({url:'https://chatgpt.com/c/'+id}),onRemoved:{addListener(){}}},scripting:{executeScript:async request=>{calls.push(request);return [{result:request.world==='MAIN'?[{id,createdAt:created,updatedAt:updated,lastMessageAt:null,dateEvidence:'react-v1'}]:raw}]}}}};
+ const context={Date,Map,Error,Promise,inspectSidebar:()=>{},readReactDates,withReactDates,chrome:{runtime:{id:'test',getURL:p=>'chrome-extension://test/'+p,onMessage:{addListener:fn=>receive=fn}},storage:{session:{get:async()=>({['request:'+id]:{hubTab:1,reviewTab:3,created:Date.now()}})}},tabs:{get:async()=>({url:'https://chatgpt.com/c/'+id}),onRemoved:{addListener(){}}},scripting:{executeScript:async request=>{calls.push(request);return [{result:request.world==='MAIN'?[{id,createdAt:created,updatedAt:updated,lastMessageAt:null,dateEvidence:'react-v1'}]:raw}]}}}};
  vm.runInNewContext(source,context);
- const response=await new Promise(resolve=>receive({type:'read',id,tabId:2},{id:'test',url:'chrome-extension://test/review.html?request='+id},resolve));
+ const response=await new Promise(resolve=>receive({type:'read',id,tabId:2},{id:'test',tab:{id:3},url:'chrome-extension://test/review.html?request='+id},resolve));
  assert.equal(response.ok,true);assert.equal(calls[1].world,'MAIN');assert.equal(browserSnapshot(response.snapshot,other).items[0].updatedAt,updated);
 });
