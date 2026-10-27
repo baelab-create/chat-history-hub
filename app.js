@@ -1,3 +1,4 @@
+import {readBookmarkImport,decodeBookmarkImport,clearBookmarkImport} from './bookmark-import.mjs?v=13';
 import {encryptedStore} from './archive-storage.mjs?v=12';
 import {mergePendingEnvelopes} from './share-queue.mjs?v=12';
 import {arrangeConversations,conversationGroup} from './conversation-order.mjs?v=11';
@@ -12,7 +13,8 @@ import {deviceRecipient} from './vault.js?v=7';
 import {encryptDevice} from './device-crypto.mjs?v=7';
 import {createRenderGate} from './render-guard.mjs?v=7';
 const $=id=>document.getElementById(id);
-let currentDeviceId=null,manualBusy=false,manualController;
+const incomingBookmark=readBookmarkImport();
+let currentDeviceId=null,manualBusy=false,manualController,bookmarkSnapshot=null;
 try{currentDeviceId=localStorage.getItem('chat-history-hub:this-device')}catch{}
 const renderGate=createRenderGate(document,()=>composeItemsNow(),pending=>{$('apply-update').hidden=!pending});
 let items=[];
@@ -120,6 +122,7 @@ function updateSyncStatus(){
  $('manual-sync').setAttribute('aria-disabled',String(refreshBusy||manualBusy));
  $('reload-saved').disabled=refreshBusy||manualBusy;
  $('retry-share').disabled=refreshBusy||manualBusy;
+ $('apply-bookmark').disabled=refreshBusy||manualBusy||!bookmarkSnapshot;
 }
 async function checkForUpdates(force=false){
  if(refreshBusy||(!force&&Date.now()-lastRefreshAttempt<10000))return;
@@ -148,9 +151,9 @@ async function publishManual(envelope){
  await encryptedStore.remove(outboxKey);pendingArchive=null;
  $('retry-share').hidden=true;
 }
-async function collectBrowser(){
+async function collectBrowser(imported=null){
  try{
-  const [saved,collected]=await Promise.allSettled([checkForUpdates(true),requestBrowserSnapshot({signal:manualController.signal,onReady:()=>{$('manual-status').textContent='열린 미리보기에서 ChatGPT 탭을 선택하고 목록을 확인한 뒤 반영해 주세요.'}})]);
+  const [saved,collected]=await Promise.allSettled([checkForUpdates(true),imported?Promise.resolve(imported):requestBrowserSnapshot({signal:manualController.signal,onReady:()=>{$('manual-status').textContent='열린 미리보기에서 ChatGPT 탭을 선택하고 목록을 확인한 뒤 반영해 주세요.'}})]);
   if(manualController.signal.aborted)throw Error('최신화를 취소했습니다.');
   if(collected.status==='rejected')throw Error((saved.status==='fulfilled'&&!refreshFailed?'저장된 목록은 불러왔지만 새 대화는 가져오지 못했습니다. ':'저장된 목록과 새 대화를 모두 확인하지 못했습니다. 기존 목록을 유지합니다. ')+(collected.reason?.message||''));
   const key='chat-history-hub:browser-device';let id=localStorage.getItem(key);if(!id){id=crypto.randomUUID();localStorage.setItem(key,id)}
@@ -165,6 +168,7 @@ async function collectBrowser(){
   composeItems();updateSyncStatus();
   $('cancel-manual').hidden=true;$('manual-status').textContent='대화 목록을 가져왔습니다. 전체 검색을 위해 암호화 저장 중입니다…';
   try{await publishManual(envelope)}catch{throw Error('대화 목록은 가져왔지만 일부 공유 저장에 실패했습니다. 공유 저장 다시 시도를 눌러 주세요.'+(cacheFailed?' 브라우저 저장 공간도 확인해 주세요. 이 탭을 닫지 마세요.':''))}
+  if(imported){clearBookmarkImport();$('bookmark-panel').hidden=true;}
   $('manual-status').textContent=`ChatGPT ${snapshot.items.length}개를 가져와 저장했습니다. 저장된 전체 대화에서 검색할 수 있습니다. 검색·날짜 필터 때문에 새 항목이 안 보이면 초기화를 눌러 주세요. 정확한 수정일은 새로 수집하지 않습니다.`;
  }catch(e){$('manual-status').textContent=e.message||'가져오기에 실패했습니다. 기존 목록은 유지합니다.'}
  finally{manualBusy=false;$('manual-sync').textContent='최신화';$('cancel-manual').hidden=true;updateSyncStatus()}
@@ -190,6 +194,22 @@ $('retry-share').onclick=async()=>{
  catch(e){$('manual-status').textContent='공유 저장 실패: '+e.message}
  finally{manualBusy=false;updateSyncStatus()}
 };
+async function prepareBookmark(){
+ if(!incomingBookmark)return;
+ $('bookmark-panel').hidden=false;
+ try{
+  if(incomingBookmark.error)throw Error(incomingBookmark.error);
+  bookmarkSnapshot=await decodeBookmarkImport(incomingBookmark.envelope,deviceRecipient);
+  $('bookmark-status').textContent=`ChatGPT에서 ${bookmarkSnapshot.items.length}개를 가져왔습니다. 아래 제목을 확인한 뒤 반영해 주세요.`;
+  for(const item of bookmarkSnapshot.items){const li=el('li','',item.title);$('bookmark-preview').append(li)}
+ }catch(e){$('bookmark-status').textContent=e.message||'가져온 목록을 확인하지 못했습니다.';bookmarkSnapshot=null;}
+ updateSyncStatus();
+}
+$('apply-bookmark').onclick=()=>{
+ if(!bookmarkSnapshot||manualBusy||refreshBusy)return;
+ manualBusy=true;manualController=new AbortController();updateSyncStatus();void collectBrowser(bookmarkSnapshot);
+};
+$('dismiss-bookmark').onclick=()=>{clearBookmarkImport();bookmarkSnapshot=null;$('bookmark-panel').hidden=true;};
 async function load(){try{
  const data=await unlockCatalog();if(!Array.isArray(data.items))throw Error('대화 목록 형식을 확인할 수 없습니다.');
  try{titles=await loadTitles()}catch{titlesReady=false;$('error').textContent='저장된 수정 제목을 불러오지 못했습니다. 기존 저장 내용을 보호하기 위해 제목 수정을 잠시 사용할 수 없습니다.';$('error').hidden=false}
@@ -198,6 +218,7 @@ async function load(){try{
  await checkForUpdates(true);
  if(deviceSnapshots().some(s=>s.source==='browser-sidebar')){selectedService='chatgpt';composeItems()}
  try{pendingArchive=await encryptedStore.get(outboxKey)||null;$('retry-share').hidden=!pendingArchive;if(pendingArchive){for(const part of Array.isArray(pendingArchive)?pendingArchive:[pendingArchive])await acceptDeviceEnvelope(part);composeItems();updateSyncStatus();$('manual-status').textContent='이전에 공유하지 못한 목록이 남아 있습니다. 공유 저장 다시 시도를 눌러 주세요.'}}catch{$('manual-status').textContent='이전에 저장한 목록을 읽지 못했습니다. 브라우저 저장 공간을 확인해 주세요.'}
+ await prepareBookmark();
  // Paused after reported interference with normal PC input.
  // No timer, focus, visibility, or online event starts automatic refresh.
 }catch(e){$('error').textContent=e.message;$('error').hidden=false;$('count').textContent='연결 확인 필요'}}

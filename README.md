@@ -24,6 +24,23 @@ changes must never collect new history.
 8. “저장 목록 다시 불러오기” reads already-shared records; it does not collect new
    ChatGPT history. Closing review or cancelling releases the pending request.
 
+## Optional bookmark capture (no extension installation)
+
+setup/simple.html contains a self-contained bookmark generated from the same DOM
+collector and public-key encryption code. Drag its button to Chrome's bookmark bar.
+Click it on ChatGPT to capture up to 200 already-loaded sidebar entries and navigate
+the same tab to Hub with ciphertext in the URL fragment. No titles enter query
+parameters, requests to GitHub, or a plaintext download. No cookies or private APIs
+are read. Hub clears the fragment, retains ciphertext in sessionStorage while login
+completes, validates it after unlock, and requires a preview/apply click before
+using the existing encrypted archive and cloud-save flow. Identity is assigned by
+Hub's existing browser device key, so repeat captures do not create new archives.
+
+This is a quick visible-list alternative, not a full-history scan. Browsers/site
+CSP may block user bookmark execution; no bypass is attempted. Live signed-in
+ChatGPT bookmark execution is unverified. Keep the extension path available.
+Rebuild with node scripts/package-bookmark.mjs; CI checks generated-source parity.
+
 ## Updating the installed extension
 
 GitHub Pages deployment does not update an unpacked extension on a user's PC.
