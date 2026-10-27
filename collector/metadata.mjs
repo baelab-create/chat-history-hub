@@ -20,6 +20,10 @@ export function normalizeSnapshot(input) {
     if(input.source==='browser-sidebar'){
       if(kind!=='chatgpt'||!(value.sidebarRank===null||Number.isInteger(value.sidebarRank)&&value.sidebarRank>=0&&value.sidebarRank<50000)||typeof value.pinned!=='boolean'||!validTime(value.browserObservedAt))throw Error('Invalid browser metadata');
       Object.assign(item,{sidebarRank:value.sidebarRank,pinned:value.pinned,browserObservedAt:value.browserObservedAt});
+      if(value.lastMessageAt!==undefined&&value.lastMessageAt!==null){
+        if(!Number.isFinite(value.lastMessageAt)||value.lastMessageAt<946684800||value.lastMessageAt>Date.now()/1000+60)throw Error('Invalid observed message date');
+        item.lastMessageAt=value.lastMessageAt;
+      }
     }
     if (unique.has(item.kind+':'+item.id)) throw Error('Duplicate record in device snapshot');
     unique.set(item.kind+':'+item.id, item);
@@ -46,7 +50,8 @@ export function accumulateDevice(previous, incoming) {
   const items = new Map(old.items.map(item => [item.kind+':'+item.id, item]));
   for (const item of next.items) {const key=item.kind+':'+item.id;const before=items.get(key);
     if(next.source==='chatgpt-export'&&before){items.set(key,{...(item.updatedAt>=before.updatedAt?item:before),updatedAt:Math.max(item.updatedAt||0,before.updatedAt||0)||null,...((item.createdAt||before.createdAt)?{createdAt:Math.min(item.createdAt||Infinity,before.createdAt||Infinity)}:{})});}
-    else if(!before||next.source==='browser-sidebar'||item.updatedAt>=before.updatedAt)items.set(key,item);
+    else if(next.source==='browser-sidebar'&&before){items.set(key,{...item,updatedAt:Math.max(item.updatedAt||0,before.updatedAt||0)||null,...((item.createdAt||before.createdAt)?{createdAt:Math.min(item.createdAt||Infinity,before.createdAt||Infinity)}:{}),...((item.lastMessageAt||before.lastMessageAt)?{lastMessageAt:Math.max(item.lastMessageAt||0,before.lastMessageAt||0)}:{})});}
+    else if(!before||item.updatedAt>=before.updatedAt)items.set(key,item);
   }
   // A missing record is not proof of deletion, even when this PC lists all its known IDs.
   return normalizeSnapshot({...next, items: [...items.values()]});

@@ -17,11 +17,12 @@ test('generated bookmark executes self-contained code and transfers encrypted me
  const code=decodeURIComponent(url.slice(11)).replace(JSON.stringify(publicKey),JSON.stringify(recipient.publicKey));
  const {document,window}=parseHTML(`<html><body><nav id="history"><a href="/c/${id}">합성 테스트 제목</a></nav><main>PRIVATE BODY MUST NOT BE COLLECTED</main></body></html>`);
  window.HTMLElement.prototype.getClientRects=()=>[{}];
+ const root={tag:3,stateNode:{}};root.stateNode.current=root;const fiber={return:root,memoizedProps:{conversation:{id,title:'합성 테스트 제목',create_time:1700000000,update_time:1700001000,content:'PRIVATE BODY'}}};root.child=fiber;document.querySelector('a').__reactFiber$fixture=fiber;
  let finish;const output=new Promise(resolve=>finish=resolve),errors=[];
  vm.runInNewContext(code,{document,URL,Date,Map,Error,Boolean,crypto,TextEncoder,TextDecoder,Uint8Array,Array,btoa,atob,JSON,encodeURIComponent,location:{origin:'https://chatgpt.com',assign:finish},alert:m=>{errors.push(m);finish(null)},confirm:()=>true});
  const target=await output;assert.deepEqual(errors,[]);assert.ok(target.startsWith('https://baelab-create.github.io/chat-history-hub/#hub-import='));assert.equal(target.includes('합성'),false);
  const envelope=JSON.parse(decodeURIComponent(new URL(target).hash.slice('#hub-import='.length)));
- const decoded=await decodeBookmarkImport(envelope,recipient);assert.equal(decoded.items[0].title,'합성 테스트 제목');assert.equal(JSON.stringify(decoded).includes('PRIVATE BODY'),false);
+ const decoded=await decodeBookmarkImport(envelope,recipient);assert.equal(decoded.items[0].title,'합성 테스트 제목');assert.equal(decoded.version,2);assert.equal(decoded.items[0].updatedAt,1700001000);assert.equal(decoded.items[0].createdAt,1700000000);assert.equal(JSON.stringify(decoded).includes('PRIVATE BODY'),false);
 });
 test('import fragment is cleared before sign-in and only ciphertext survives reload',()=>{
  const storage=session(),payload={ciphertext:'encrypted-only'},changes=[];

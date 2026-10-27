@@ -8,7 +8,7 @@ test('handshake ignores foreign windows and origins; cancellation invalidates re
  const controller=new AbortController();let ready=0;
  const result=requestBrowserSnapshot({signal:controller.signal,onReady:()=>ready++});
  emit({type:'ready'},{},location.origin);emit({type:'ready'},win,'https://evil.test');emit({type:'result',snapshot:{}});assert.equal(ready,0);
- emit({type:'ready',version:'1.2.0'});emit({type:'ready',version:'1.2.0'});assert.equal(ready,1);assert.equal(sent.filter(m=>m.type==='collect').length,1);
+ emit({type:'ready',version:'1.3.0'});emit({type:'ready',version:'1.3.0'});assert.equal(ready,1);assert.equal(sent.filter(m=>m.type==='collect').length,1);
  controller.abort();await assert.rejects(result,/취소/);assert.equal(sent.at(-1).type,'abort');assert.equal(listeners.size,0);
  delete globalThis.window;delete globalThis.location;
 });
@@ -21,9 +21,12 @@ function connectionFixture(){
 test('old unversioned bridge fails with an update instruction before opening review',async()=>{
  const f=connectionFixture();try{const promise=requestBrowserSnapshot();f.emit({type:'ready'});await assert.rejects(promise,/이전 버전/);assert.equal(f.sent.length,1);assert.equal(f.listeners.size,0)}finally{f.close()}
 });
+test('the title-only 1.2 extension requests a one-time date-capable update',async()=>{
+ const f=connectionFixture();try{const promise=requestBrowserSnapshot();f.emit({type:'ready',version:'1.2.0'});await assert.rejects(promise,/1.3.0/);assert.equal(f.sent.length,1)}finally{f.close()}
+});
 test('connection probe checks version without starting collection',async()=>{
- const f=connectionFixture();try{const promise=probeBrowserExtension();f.emit({type:'ready',version:'1.2.0'});assert.equal((await promise).version,'1.2.0');assert.equal(f.sent.length,1);assert.equal(f.listeners.size,0)}finally{f.close()}
+ const f=connectionFixture();try{const promise=probeBrowserExtension();f.emit({type:'ready',version:'1.3.0'});assert.equal((await promise).version,'1.3.0');assert.equal(f.sent.length,1);assert.equal(f.listeners.size,0)}finally{f.close()}
 });
 test('closing review fails the active request and removes listeners',async()=>{
- const f=connectionFixture();try{const promise=requestBrowserSnapshot();f.emit({type:'ready',version:'1.2.0'});f.emit({type:'error',error:'미리보기를 닫았습니다.'});await assert.rejects(promise,/닫았습니다/);assert.equal(f.listeners.size,0)}finally{f.close()}
+ const f=connectionFixture();try{const promise=requestBrowserSnapshot();f.emit({type:'ready',version:'1.3.0'});f.emit({type:'error',error:'미리보기를 닫았습니다.'});await assert.rejects(promise,/닫았습니다/);assert.equal(f.listeners.size,0)}finally{f.close()}
 });

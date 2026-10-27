@@ -7,7 +7,7 @@ root = pathlib.Path(__file__).resolve().parent.parent
 payload = io.BytesIO()
 with zipfile.ZipFile(payload, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
     for path in sorted((root / 'extension').iterdir()):
-        if path.is_file() and path.suffix in {'.js', '.json', '.html'}:
+        if path.is_file() and path.suffix in {'.js', '.json', '.html', '.txt'}:
             info = zipfile.ZipInfo('chat-history-browser-extension/' + path.name, (2026, 10, 24, 0, 0, 0))
             info.compress_type = zipfile.ZIP_DEFLATED
             info.external_attr = 0o644 << 16

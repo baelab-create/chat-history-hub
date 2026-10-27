@@ -1,4 +1,5 @@
 import {inspectSidebar} from './collector.js';
+import {readReactDates,withReactDates} from './react-dates.js';
 const HUB='https://baelab-create.github.io/chat-history-hub/';
 const allowedHub=url=>typeof url==='string'&&url.startsWith(HUB);
 chrome.runtime.onMessage.addListener((m,sender,reply)=>{
@@ -21,7 +22,9 @@ chrome.runtime.onMessage.addListener((m,sender,reply)=>{
    if(!tab.url?.startsWith('https://chatgpt.com/'))throw Error('ChatGPT 탭을 선택해 주세요.');
    const [r]=await chrome.scripting.executeScript({target:{tabId:m.tabId},func:inspectSidebar,args:[{action:m.type==='read'?'read':m.type==='reset-scan'?'reset':'advance',retry:m.retry===true}]});
    if(!r?.result)throw Error('목록을 읽지 못했습니다.');
-   return m.type==='read'?{snapshot:r.result}:{step:r.result};
+   if(m.type!=='read')return {step:r.result};
+   const [dates]=await chrome.scripting.executeScript({target:{tabId:m.tabId},world:'MAIN',func:readReactDates,args:[r.result.items.map(row=>row.id)]});
+   return {snapshot:withReactDates(r.result,dates?.result||[])};
   }
   if(m.type==='apply'||m.type==='cancel'){
    const tab=await chrome.tabs.get(request.hubTab);

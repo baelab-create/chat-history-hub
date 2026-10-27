@@ -12,7 +12,9 @@ export async function scanHistory({read,advance,onProgress=()=>{},stopped=()=>fa
   let snapshot;try{snapshot=await read()}catch(error){if(!rows.size)throw error;reason='load-error';break;}let added=0;
   for(const item of snapshot.items){
    const old=rows.get(item.id);
-   if(old){old.title=item.title;old.pinned ||= item.pinned;if(old.rank===null&&item.rank!==null)old.rank=rank++;continue;}
+   if(old){old.title=item.title;old.pinned ||= item.pinned;if(old.rank===null&&item.rank!==null)old.rank=rank++;
+    for(const key of ['createdAt','updatedAt','lastMessageAt'])if(item[key]!=null){old[key]=key==='createdAt'?Math.min(old[key]??Infinity,item[key]):Math.max(old[key]??0,item[key]);old.dateEvidence=item.dateEvidence;}
+    continue;}
    if(rows.size>=maxItems){reason='limit';break;}
    rows.set(item.id,{...item,rank:item.rank===null?null:rank++});added++;
   }
@@ -30,5 +32,5 @@ export async function scanHistory({read,advance,onProgress=()=>{},stopped=()=>fa
  if(!rows.size)throw Error('가져온 대화가 없습니다. ChatGPT 로그인과 사이드바를 확인해 주세요.');
  const positions=new Map(order.map((id,i)=>[id,i]));
  for(const item of rows.values())item.rank=positions.get(item.id)??null;
- return {version:1,observedAt:new Date(now()).toISOString(),coverage:'loaded-sidebar-only',scan:{reason,count:rows.size},items:[...rows.values()]};
+ return {version:2,collectorVersion:'1.3.0',observedAt:new Date(now()).toISOString(),coverage:'loaded-sidebar-only',scan:{reason,count:rows.size},items:[...rows.values()]};
 }

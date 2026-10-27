@@ -20,9 +20,9 @@ async function readHistory(full){
   if(cancelled)return;
   snapshot=result;
   // Large archives must not freeze review by building 50,000 DOM rows.
-  for(const row of snapshot.items.slice(0,200)){const li=document.createElement('li');li.textContent=(row.pinned?'[고정] ':'')+row.title;$('preview').append(li);}
+  for(const row of snapshot.items.slice(0,200)){const li=document.createElement('li');li.textContent=(row.pinned?'[고정] ':'')+row.title+(row.updatedAt||row.createdAt?' · 대화 날짜 확인':row.lastMessageAt?' · 내 메시지 날짜 확인':' · 날짜 미확인');$('preview').append(li);}
   const reasons={'no-more-visible':'더 이상 추가 항목이 표시되지 않아 멈췄습니다.','stopped':'요청에 따라 여기까지 읽었습니다.','load-error':'추가 로딩 오류가 있어 여기까지 읽었습니다.','limit':'50,000개 한도에 도달했습니다.','time-limit':'20분 한도에 도달했습니다.'};
-  $('status').textContent=`${snapshot.items.length}개 확인. ${reasons[snapshot.scan?.reason]||'현재 표시된 최근 목록을 읽었습니다.'} 아래 반영 버튼을 눌러야 Hub에 저장됩니다. 미리보기는 최대 200개이며 확인한 전체 항목을 저장합니다. 계정 전체 수집과 정확한 수정일은 보장하지 않습니다.`;
+  $('status').textContent=`${snapshot.items.length}개 확인. ${reasons[snapshot.scan?.reason]||'현재 표시된 최근 목록을 읽었습니다.'} 아래 반영 버튼을 눌러야 Hub에 저장됩니다. 미리보기는 최대 200개이며 확인한 전체 항목을 저장합니다. 날짜 ${snapshot.items.filter(t=>t.updatedAt||t.createdAt||t.lastMessageAt).length}개 확인. 내 메시지 시각은 대화 전체의 수정일과 구분합니다.`;
  }catch(e){$('status').textContent=e.message;}finally{running=false;controls();}
 }
 $('quick').onclick=()=>readHistory(false);

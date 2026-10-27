@@ -4,7 +4,7 @@ Collection starts only from the user's explicit action. Keep the old scheduled t
 AI heartbeat and collector/sync.mjs disabled. Page load, focus, online and visibility
 changes must never collect new history.
 
-## Current browser flow (extension 1.2.0)
+## Current browser flow (extension 1.3.0)
 
 1. Google/Firebase login unlocks the existing encrypted catalog. The page loads saved
    metadata from GitHub, browser cache and the existing private Firebase collection.
@@ -12,8 +12,10 @@ changes must never collect new history.
 3. “최신화” opens review in the installed Chrome extension. The user selects their
    ChatGPT tab and chooses quick visible-recent capture or a bounded history scan.
 4. The serialized collector supports Work's Recent sections and the standard browser
-   history container. It reads rendered titles and conversation links only. Missing
-   or collapsed supported containers fail closed; no body or private API fallback.
+   history container. The DOM stage reads rendered titles and conversation links.
+   A separate MAIN-world stage reads allowlisted date metadata from committed React
+   owners of those visible rows and the currently open chat. Missing or collapsed
+   supported containers fail closed; no body text, cookies, tokens or private APIs.
 5. “이 목록을 Hub에 반영” validates, shards and encrypts metadata in the signed-in
    Hub. Existing titles are retained, and search/date filters are preserved.
 6. Encrypted archives and the failed-upload queue use IndexedDB, with legacy
@@ -84,8 +86,8 @@ Do not claim a live Firebase write or browser permission flow passed unless obse
 
 ## Exact dates from a user-selected ChatGPT export
 
-The default view groups by the chosen date: modification or creation, in Asia/Seoul.
-Sidebar/bookmark capture does not contain timestamps; unknown dates stay unknown.
+The default view groups confirmed activity dates in Asia/Seoul. Explicit creation
+and modification views remain available. Unknown dates stay unknown.
 The date import panel accepts conversations.json or a regular ZIP containing it.
 ZIP reading uses the central directory and bounded native deflate decompression,
 reads no unrelated member, checks size/CRC, and never uploads the raw file. ZIP64
@@ -101,3 +103,31 @@ and later bookmark capture preserves them. Import does not claim to refresh curr
 cloud timestamps: dates describe the export, and subsequent changes need a new file.
 A date-range filter explicitly reports exclusion of records with unknown dates.
 The export format is validated at runtime; no live user export has been tested.
+
+## React date capture (1.3.0)
+
+The user requested the approach used by Hangzhi/chatgpt-timestamp-extension.
+The committed-fiber timestamp approach is adapted under MIT; its license is included
+in the extension ZIP and embedded in the generated standalone bookmark. No periodic
+collection, private API calls, new permissions or body capture are added.
+
+- Visible sidebar rows: inspect only known props wrappers with an exact conversation
+  ID and a title; accept explicit creation/modification fields. Never derive dates
+  from UUIDs, sidebar ranks, capture time, message objects, or mismatched chats.
+- Open conversation: match current conversation ID, DOM message ID, committed React
+  owner, and (for the new shell) live turn/snapshot identity. Read only user-message
+  creation times, never content. These observations populate lastMessageAt, never
+  updatedAt or createdAt. No background navigation opens other conversations.
+- Hub: v2 date payloads require evidence tags and bounded numeric timestamps. Existing
+  v1 bookmarks remain readable with a replacement notice. Later captures that lack
+  dates retain previously known dates. Scanned repeated rows merge date evidence.
+- Activity view uses the newest known modification, creation, or loaded user-message
+  time, with a visible source label for message/creation fallback. Exact creation
+  and modification filters do not substitute message time.
+
+This is an adapter for undocumented page internals, not a verified connection to all
+account history. Supported sidebar prop shapes and both message layouts are covered
+by synthetic fixtures only. A real signed-in ChatGPT capture has NOT been validated.
+The page may not expose dates for every loaded row. Report missing dates instead of
+claiming a full account sync. Existing bookmarks contain old embedded code and must
+be replaced once; existing unpacked extensions must be updated once to 1.3.0.

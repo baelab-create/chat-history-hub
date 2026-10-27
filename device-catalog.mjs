@@ -1,4 +1,4 @@
-import {normalizeSnapshot, accumulateDevice} from './collector/metadata.mjs?v=14';
+import {normalizeSnapshot, accumulateDevice} from './collector/metadata.mjs?v=15';
 export function mergeCatalogs(legacy, snapshots) {
   const map=new Map();
   const key=t=>(t.kind==='chatgpt'?'chatgpt':'codex')+':'+t.id;
@@ -9,12 +9,15 @@ export function mergeCatalogs(legacy, snapshots) {
       const old=map.get(key(t));
       const next={...t,webUrl:t.kind==='chatgpt'?'https://chatgpt.com/c/'+t.id:undefined};
       const createdAt=Math.min(old?.createdAt||Infinity,t.createdAt||Infinity);
+      const lastMessageAt=Math.max(old?.lastMessageAt||0,t.lastMessageAt||0);
       if(Number.isFinite(createdAt))next.createdAt=createdAt;
+      if(lastMessageAt)next.lastMessageAt=lastMessageAt;
       if(old?.project&&(!t.project||t.project==='프로젝트 없음'))next.project=old.project;
-      if(t.browserObservedAt&&(!old?.browserObservedAt||t.browserObservedAt>=old.browserObservedAt)){map.set(key(t),{...old,...next,updatedAt:t.updatedAt??old?.updatedAt??null,observedAt:snapshot.observedAt,devices:[...new Set([...(old?.devices||[]),snapshot.deviceId])]});continue;}
+      if(t.browserObservedAt&&(!old?.browserObservedAt||t.browserObservedAt>=old.browserObservedAt)){map.set(key(t),{...old,...next,updatedAt:Math.max(t.updatedAt||0,old?.updatedAt||0)||null,observedAt:snapshot.observedAt,devices:[...new Set([...(old?.devices||[]),snapshot.deviceId])]});continue;}
       const newer=!old||t.updatedAt>old.updatedAt||(t.updatedAt===old.updatedAt&&snapshot.observedAt>(old.observedAt||''));
       const result=newer?{...old,...next,observedAt:snapshot.observedAt}:{...old};
       if(Number.isFinite(createdAt))result.createdAt=createdAt;
+      if(lastMessageAt)result.lastMessageAt=lastMessageAt;
       if(old?.browserObservedAt&&(!t.browserObservedAt||t.browserObservedAt<old.browserObservedAt)){Object.assign(result,{title:old.title,sidebarRank:old.sidebarRank,pinned:old.pinned,browserObservedAt:old.browserObservedAt});}
       map.set(key(t),{...result,devices:[...new Set([...(old?.devices||[]),snapshot.deviceId])]});
     }

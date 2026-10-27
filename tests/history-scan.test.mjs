@@ -23,3 +23,8 @@ test('archive partitions are stable across repeated scans and retain all records
 test('repeated source loading failures retry twice then return partial history',async()=>{let retries=0;const out=await scanHistory({read:async()=>({items:[row(1)]}),advance:async args=>{if(args?.retry)retries++;return {error:true,retryAvailable:true,atBottom:true,busy:false}}});assert.equal(retries,2);assert.equal(out.scan.reason,'load-error');assert.equal(out.items.length,1)});
 
 test('later rendered pages can insert older rows between already observed anchors',()=>{assert.deepEqual(mergeDisplayedOrder(['a','d','e'],['a','b','c','d','e']),['a','b','c','d','e']);assert.deepEqual(mergeDisplayedOrder(['a','b','c'],['c','d']),['a','b','c','d']);assert.deepEqual(mergeDisplayedOrder(['a','b'],['c','d']),['a','b','c','d']);});
+
+test('scanning a row again keeps dates when later renders omit metadata',async()=>{
+ let reads=0;const out=await scanHistory({read:async()=>({items:[{...row(1),...(reads++===0?{createdAt:1700000000,updatedAt:1700001000,lastMessageAt:1700002000,dateEvidence:'react-v1'}:{})}]}),advance:async()=>({atBottom:true})});
+ assert.equal(out.version,2);assert.equal(out.items[0].createdAt,1700000000);assert.equal(out.items[0].updatedAt,1700001000);assert.equal(out.items[0].lastMessageAt,1700002000);
+});

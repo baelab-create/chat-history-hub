@@ -1,5 +1,5 @@
 import {decryptDevice} from './device-crypto.mjs?v=7';
-import {browserSnapshot} from './browser-client.mjs?v=12';
+import {browserSnapshot} from './browser-client.mjs?v=15';
 const key='chat-history-hub:bookmark-import:v1',prefix='#hub-import=';
 export function readBookmarkImport(loc=globalThis.location,history=globalThis.history,storage=globalThis.sessionStorage){
  try{
