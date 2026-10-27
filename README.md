@@ -81,3 +81,23 @@ Windows target: %LOCALAPPDATA%/ChatHistoryHubManual. Mac target: ~/Library/Appli
 Run node --test tests/*.test.mjs. Verify origin/nonce rejection, exactly one observation, automatic listener shutdown, encryption/tamper checks, preservation of old history, and focused-input protection. Browser checks use the synthetic fixture, never private account data.
 
 Do not claim a live Firebase write or browser permission flow passed unless observed. Do not turn this manual collector into a scheduled job.
+
+## Exact dates from a user-selected ChatGPT export
+
+The default view groups by the chosen date: modification or creation, in Asia/Seoul.
+Sidebar/bookmark capture does not contain timestamps; unknown dates stay unknown.
+The date import panel accepts conversations.json or a regular ZIP containing it.
+ZIP reading uses the central directory and bounded native deflate decompression,
+reads no unrelated member, checks size/CRC, and never uploads the raw file. ZIP64
+and unsupported compression require extracting conversations.json first. JSON is
+limited to 128 MiB and 50,000 conversations. Unsupported/missing timestamp rows
+are counted and skipped; creation time is never used as modification time.
+
+Only ID, title, create_time, update_time and archive flag are mapped into metadata.
+A preview and explicit apply are required. Export metadata uses a separate stable
+archive identity, existing encryption and the durable manual sharing queue. Merging
+fills dates for already-captured titles; older exports cannot regress known dates,
+and later bookmark capture preserves them. Import does not claim to refresh current
+cloud timestamps: dates describe the export, and subsequent changes need a new file.
+A date-range filter explicitly reports exclusion of records with unknown dates.
+The export format is validated at runtime; no live user export has been tested.

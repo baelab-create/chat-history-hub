@@ -1,13 +1,14 @@
+import {readExportFile,exportSnapshot} from './export-import.mjs?v=14';
 import {readBookmarkImport,decodeBookmarkImport,clearBookmarkImport} from './bookmark-import.mjs?v=13';
 import {encryptedStore} from './archive-storage.mjs?v=12';
-import {mergePendingEnvelopes} from './share-queue.mjs?v=12';
+import {mergePendingEnvelopes} from './share-queue.mjs?v=14';
 import {arrangeConversations,conversationGroup} from './conversation-order.mjs?v=11';
-import {splitBrowserArchive} from './browser-archive.mjs?v=10';
-import {mergeCatalogs} from './device-catalog.mjs?v=10';
+import {splitBrowserArchive} from './browser-archive.mjs?v=14';
+import {mergeCatalogs} from './device-catalog.mjs?v=14';
 import {collectionStatus} from './sync-status.mjs?v=7';
-import {refreshDevices,deviceSnapshots,acceptDeviceEnvelope} from './devices.js?v=12';
+import {refreshDevices,deviceSnapshots,acceptDeviceEnvelope} from './devices.js?v=14';
 import {unlockCatalog,loadTitles,saveTitles,refreshCatalog} from './vault.js?v=7';
-import {loadCloudDevices,saveCloudDevice} from './cloud-devices.js?v=10';
+import {loadCloudDevices,saveCloudDevice} from './cloud-devices.js?v=14';
 import {requestBrowserSnapshot,browserSnapshot,probeBrowserExtension} from './browser-client.mjs?v=12';
 import {deviceRecipient} from './vault.js?v=7';
 import {encryptDevice} from './device-crypto.mjs?v=7';
@@ -15,6 +16,7 @@ import {createRenderGate} from './render-guard.mjs?v=7';
 const $=id=>document.getElementById(id);
 const incomingBookmark=readBookmarkImport();
 let currentDeviceId=null,manualBusy=false,manualController,bookmarkSnapshot=null;
+let exportPreview=null,exportReading=false;
 try{currentDeviceId=localStorage.getItem('chat-history-hub:this-device')}catch{}
 const renderGate=createRenderGate(document,()=>composeItemsNow(),pending=>{$('apply-update').hidden=!pending});
 let items=[];
@@ -63,25 +65,32 @@ function validUrl(raw,kind){try{const u=new URL(raw);return kind==='web'?u.proto
 function render(){
  const q=$('query').value.trim().toLocaleLowerCase('ko');
  const from=$('from').value,to=$('to').value,project=$('project').value;
+ const dateKey=$('date-basis').value==='created'?'createdAt':'updatedAt';
+ const dateLabel=dateKey==='createdAt'?'대화 시작일':'마지막 수정일';
+ const dateOf=t=>Number.isFinite(t[dateKey])&&t[dateKey]>0?t[dateKey]:null;
+ $('date-hint').textContent=dateLabel+' · 한국 시간';
  const newestBrowser=items.reduce((latest,t)=>t.browserObservedAt>latest?t.browserObservedAt:latest,'');
  const recent=$('sort').value==='recent'&&!q;
  const chromeOrder=$('sort').value==='browser';
  const sourceRows=chromeOrder?arrangeConversations(items):items;
- const rows=sourceRows.filter(t=>(!recent||(t.browserObservedAt===newestBrowser&&(t.sidebarRank!==null||t.pinned)))&&(!$('device').value||t.devices?.some(id=>id===$('device').value||deviceSnapshots().find(s=>s.deviceId===id)?.archiveDeviceId===$('device').value))&&(selectedService==='all'||serviceOf(t)===selectedService)&&(!q||displayTitle(t).toLocaleLowerCase('ko').includes(q))&&(!project||t.project===project)&&(!(from||to)||Number.isFinite(t.updatedAt))&&(!from||dateFormat.format(new Date(t.updatedAt*1000))>=from)&&(!to||dateFormat.format(new Date(t.updatedAt*1000))<=to)).sort((a,b)=>{if(chromeOrder)return 0;if(recent)return (a.sidebarRank??10000)-(b.sidebarRank??10000);if(a.updatedAt===null)return b.updatedAt===null?0:1;if(b.updatedAt===null)return -1;return ($('sort').value==='asc'?1:-1)*(a.updatedAt-b.updatedAt)});
+ const rows=sourceRows.filter(t=>(!recent||(t.browserObservedAt===newestBrowser&&(t.sidebarRank!==null||t.pinned)))&&(!$('device').value||t.devices?.some(id=>id===$('device').value||deviceSnapshots().find(s=>s.deviceId===id)?.archiveDeviceId===$('device').value))&&(selectedService==='all'||serviceOf(t)===selectedService)&&(!q||displayTitle(t).toLocaleLowerCase('ko').includes(q))&&(!project||t.project===project)&&(!(from||to)||dateOf(t)!==null)&&(!from||dateFormat.format(new Date(dateOf(t)*1000))>=from)&&(!to||dateFormat.format(new Date(dateOf(t)*1000))<=to)).sort((a,b)=>{if(chromeOrder)return 0;if(recent)return (a.sidebarRank??10000)-(b.sidebarRank??10000);const aDate=dateOf(a),bDate=dateOf(b);if(aDate===null)return bDate===null?0:1;if(bDate===null)return -1;return ($('sort').value==='asc'?1:-1)*(aDate-bDate)});
  $('service-note').textContent=(chromeOrder?'Chrome에서 확인한 순서입니다. 추정 날짜는 앞뒤 대화의 기존 기록을 기준으로 하며, 실제 수정일과 다를 수 있습니다. ':'')+'제목을 누르면 원래 대화가 열립니다. 로컬 작업은 해당 작업이 있는 PC에서 열 수 있습니다.';
+ const unknown=items.filter(t=>(selectedService==='all'||serviceOf(t)===selectedService)&&dateOf(t)===null).length;
+ $('date-help').hidden=unknown===0;$('date-help-count').textContent=`${dateLabel}이 없는 대화 ${unknown}개가 있습니다. 북마크는 제목과 링크만 가져옵니다. 내보내기 파일로 날짜를 채워 주세요.`;
+ $('date-filter-note').textContent=(from||to)&&unknown?`날짜가 없는 ${unknown}개는 날짜 범위 검색에서 제외됩니다.`:'';
  $('count').textContent=rows.length+'개 대화';$('results').replaceChildren();
  if(from&&to&&from>to){$('results').append(el('div','empty','시작일을 종료일 이전으로 선택해 주세요.'));return}
  if(recent&&!newestBrowser){$('results').append(el('div','empty','최신화를 눌러 ChatGPT 최근 목록을 가져와 주세요.'));return;}
  if(!rows.length){$('results').append(el('div','empty',items.some(t=>selectedService==='all'||serviceOf(t)===selectedService)?'검색 결과가 없습니다.':'아직 가져온 대화가 없습니다.'));return}
  let previousDay,group;
  for(const t of rows){
-  const day=chromeOrder?conversationGroup(t):recent?'recent':t.updatedAt===null?'unknown':dateFormat.format(new Date(t.updatedAt*1000));
-  if(day!==previousDay){const section=el('section','day-group');section.append(el('h2','day-heading',chromeOrder?day:day==='recent'?'최근 가져온 ChatGPT 대화':day==='unknown'?'날짜 미확인':new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',year:'numeric',month:'long',day:'numeric',weekday:'long'}).format(new Date(t.updatedAt*1000))));group=el('div','rows');group.setAttribute('role','list');section.append(group);$('results').append(section);previousDay=day}
+  const day=chromeOrder?(dateKey==='updatedAt'?conversationGroup(t):dateOf(t)===null?'시작일 미확인 · Chrome 순서 유지':dateFormat.format(new Date(dateOf(t)*1000))):recent?'recent':dateOf(t)===null?'unknown':dateFormat.format(new Date(dateOf(t)*1000));
+  if(day!==previousDay){const section=el('section','day-group');section.append(el('h2','day-heading',chromeOrder?day:day==='recent'?'최근 가져온 ChatGPT 대화':day==='unknown'?dateLabel+' 미확인':new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',year:'numeric',month:'long',day:'numeric',weekday:'long'}).format(new Date(dateOf(t)*1000))));group=el('div','rows');group.setAttribute('role','list');section.append(group);$('results').append(section);previousDay=day}
   const web=t.webUrl&&validUrl(t.webUrl,'web');
   const localUrl='codex://threads/'+t.id,local=t.kind==='codex'&&currentDeviceId&&t.devices?.includes(currentDeviceId)&&validUrl(localUrl,'app');
   const row=el('div','row');row.setAttribute('role','listitem');const body=el('div');const content=el(web||local?'a':'span','title',displayTitle(t));
   if(web||local){content.href=web?t.webUrl:localUrl;if(web){content.target='_blank';content.rel='noopener noreferrer'}}
-  const d=t.updatedAt===null?null:new Date(t.updatedAt*1000);const date=el('time','',d?timeFormat.format(d):'시간 미확인');if(d)date.dateTime=d.toISOString();date.title=d?'마지막 수정일 · 한국 시간':'정확한 날짜 미확인';
+  const d=dateOf(t)===null?null:new Date(dateOf(t)*1000);const date=el('time','',d?timeFormat.format(d):'시간 미확인');if(d)date.dateTime=d.toISOString();date.title=d?dateLabel+' · 한국 시간':'내보내기 파일에서 날짜를 가져와 주세요.';
   const meta=el('div','meta');meta.append(el('span','tag',serviceNames[t.kind]||'로컬 작업'),el('span','',t.project||'프로젝트 없음'));for(const name of new Set((t.devices||[]).map(id=>id==='legacy-desktop'?'데스크탑':deviceSnapshots().find(d=>d.deviceId===id)?.deviceName||'추가 기기')))meta.append(el('span','tag',name));if(t.inferredDateLabel)meta.append(el('span','tag','앞뒤 대화의 기존 날짜로 추정'));if((recent||chromeOrder)&&t.pinned)meta.append(el('span','tag','고정'));if(t.sourceDate)meta.append(el('span','',' · 수집 당시 표시: '+t.sourceDate));body.append(content,meta);
   const actions=el('div','actions');const actionLink=(label,url)=>{const a=el('a','',label);a.href=url;a.target='_blank';a.rel='noopener noreferrer';return a};
   if(web)actions.append(actionLink('웹에서 열기',t.webUrl));else if(local){const a=el('a','','Codex에서 열기');a.href=localUrl;actions.append(a)}else actions.append(el('span','no-web-link','해당 PC에서 최신화 후 열기'));
@@ -109,7 +118,7 @@ function applyCatalog(data){
  if(!Array.isArray(data.items)||!data.items.length||data.items.some(t=>typeof t.id!=='string'||typeof t.title!=='string'||!Number.isFinite(t.updatedAt)||Math.abs(t.updatedAt)>=8e12))throw Error('목록 형식이 올바르지 않습니다.');
  if(Date.parse(data.collectedAt)<Date.parse(catalogInfo.collectedAt))return;
  baseItems=[...new Map(data.items.map(t=>[t.id,{...t,project:typeof t.project==='string'?t.project:'프로젝트 없음'}])).values()];
- catalogInfo=data;$('coverage').textContent='Chrome 목록을 내려가며 이전 대화까지 누적합니다. 추가 로딩이 멈춘 범위를 안내하며, 계정 전체 내역과 정확한 수정일은 보장하지 않습니다.';composeItems();updateSyncStatus();
+ catalogInfo=data;$('coverage').textContent='날짜별 보기는 기록에 포함된 날짜를 사용합니다. 북마크·확장 프로그램은 제목과 순서만 수집하므로, 날짜는 내보내기 파일에서 추가해 주세요.';composeItems();updateSyncStatus();
 }
 function applyPendingCatalog(){if(!pendingCatalog){composeItems();return true;}const data=pendingCatalog;pendingCatalog=null;applyCatalog(data);return true}
 function updateSyncStatus(){
@@ -123,6 +132,9 @@ function updateSyncStatus(){
  $('reload-saved').disabled=refreshBusy||manualBusy;
  $('retry-share').disabled=refreshBusy||manualBusy;
  $('apply-bookmark').disabled=refreshBusy||manualBusy||!bookmarkSnapshot;
+ $('export-file').disabled=refreshBusy||manualBusy||exportReading;
+ $('apply-export').disabled=refreshBusy||manualBusy||!exportPreview;
+ $('dismiss-export').disabled=manualBusy;
 }
 async function checkForUpdates(force=false){
  if(refreshBusy||(!force&&Date.now()-lastRefreshAttempt<10000))return;
@@ -210,6 +222,38 @@ $('apply-bookmark').onclick=()=>{
  manualBusy=true;manualController=new AbortController();updateSyncStatus();void collectBrowser(bookmarkSnapshot);
 };
 $('dismiss-bookmark').onclick=()=>{clearBookmarkImport();bookmarkSnapshot=null;$('bookmark-panel').hidden=true;};
+function clearExportPreview(){exportPreview=null;$('export-preview').replaceChildren();$('apply-export').hidden=true;$('dismiss-export').hidden=true;updateSyncStatus();}
+$('export-file').onchange=async()=>{
+ const file=$('export-file').files?.[0];if(!file||manualBusy||refreshBusy)return;
+ clearExportPreview();exportReading=true;updateSyncStatus();$('export-status').textContent='파일을 이 브라우저에서 읽고 있습니다…';
+ try{
+  exportPreview=await readExportFile(file);
+  const dated=exportPreview.items.filter(t=>t.updatedAt).length,created=exportPreview.items.filter(t=>t.createdAt).length;
+  $('export-status').textContent=`대화 ${exportPreview.items.length}개 · 마지막 수정일 ${dated}개 · 시작일 ${created}개. ${exportPreview.skipped?`형식 또는 날짜가 없는 ${exportPreview.skipped}개는 제외했습니다. `:''}아래 목록을 확인한 뒤 날짜 반영을 눌러 주세요. 최대 20개를 미리 보여드립니다.`;
+  for(const t of exportPreview.items.slice(0,20))$('export-preview').append(el('li','',t.title+' · 수정일 '+(t.updatedAt?dateFormat.format(new Date(t.updatedAt*1000)):'없음')+' · 시작일 '+(t.createdAt?dateFormat.format(new Date(t.createdAt*1000)):'없음')));
+  $('apply-export').hidden=false;$('dismiss-export').hidden=false;
+ }catch(e){clearExportPreview();$('export-status').textContent=e.message||'파일을 읽지 못했습니다.';}
+ finally{exportReading=false;$('export-file').value='';updateSyncStatus();}
+};
+$('dismiss-export').onclick=()=>{if(manualBusy)return;clearExportPreview();$('export-status').textContent='파일 선택을 취소했습니다. 저장된 목록은 그대로입니다.';};
+$('apply-export').onclick=async()=>{
+ if(!exportPreview||manualBusy||refreshBusy)return;
+ const metadata=exportPreview;manualBusy=true;$('sort').value='desc';updateSyncStatus();
+ $('export-status').textContent='제목과 날짜를 암호화해 저장하고 있습니다…';
+ try{
+  if(!deviceRecipient)throw Error('암호화를 준비하지 못했습니다. 다시 로그인해 주세요.');
+  const key='chat-history-hub:export-device';let id=localStorage.getItem(key);if(!id){id=crypto.randomUUID();localStorage.setItem(key,id)}
+  const snapshot=exportSnapshot(metadata,id),archive=await splitBrowserArchive(snapshot);
+  const envelopes=await Promise.all(archive.map(s=>encryptDevice(s,deviceRecipient.publicKey)));
+  const cached=await Promise.allSettled(envelopes.map(acceptDeviceEnvelope));
+  selectedService='chatgpt';composeItems();
+  try{await publishManual(envelopes)}catch{throw Error('날짜를 읽었지만 공유 저장에 실패했습니다. 공유 저장 다시 시도를 눌러 주세요.'+(cached.some(r=>r.status==='rejected')?' 브라우저 저장 공간도 확인해 주세요. 이 탭을 닫지 마세요.':''))}
+  clearExportPreview();
+  $('export-status').textContent=`${snapshot.items.length}개 대화의 날짜를 반영했습니다. 날짜 기준과 시작일·종료일로 찾아보세요. 파일에 없는 대화나 이후의 변경은 새 내보내기 파일이 필요합니다.`;
+  $('manual-status').textContent='날짜가 포함된 대화 목록을 저장했습니다.';
+ }catch(e){$('export-status').textContent=e.message||'날짜를 저장하지 못했습니다. 기존 목록은 유지합니다.';}
+ finally{manualBusy=false;updateSyncStatus();}
+};
 async function load(){try{
  const data=await unlockCatalog();if(!Array.isArray(data.items))throw Error('대화 목록 형식을 확인할 수 없습니다.');
  try{titles=await loadTitles()}catch{titlesReady=false;$('error').textContent='저장된 수정 제목을 불러오지 못했습니다. 기존 저장 내용을 보호하기 위해 제목 수정을 잠시 사용할 수 없습니다.';$('error').hidden=false}
@@ -222,7 +266,7 @@ async function load(){try{
  // Paused after reported interference with normal PC input.
  // No timer, focus, visibility, or online event starts automatic refresh.
 }catch(e){$('error').textContent=e.message;$('error').hidden=false;$('count').textContent='연결 확인 필요'}}
-for(const id of ['query','project','from','to','sort','device'])$(id).addEventListener('input',render);
-$('reset').onclick=()=>{for(const id of ['query','project','from','to','device'])$(id).value='';$('sort').value='browser';render()};$('lock').onclick=()=>location.reload();load();
+for(const id of ['query','project','from','to','sort','device','date-basis'])$(id).addEventListener('input',render);
+$('reset').onclick=()=>{for(const id of ['query','project','from','to','device'])$(id).value='';$('sort').value='desc';$('date-basis').value='updated';render()};$('lock').onclick=()=>location.reload();load();
  $('import-form').onsubmit=async e=>{e.preventDefault();const button=$('import-button');try{if(!extraReady)throw Error('기존 추가 목록을 먼저 복구해야 합니다.');const raw=JSON.parse($('import-list').value);if(!Array.isArray(raw)||!raw.length||raw.length>10000)throw Error('가져올 목록을 확인해 주세요.');const next=new Map(extraItems.map(t=>[t.id,t]));for(const value of raw){const t=normalizeExtra(value);next.set(t.id,t)}button.disabled=true;await saveTitles({items:[...next.values()]},extraStorage);extraItems=[...next.values()];$('import-list').value='';$('import-status').textContent=raw.length+'개 항목을 이 브라우저에 저장했습니다.';composeItems()}catch(error){$('import-status').textContent=error instanceof SyntaxError?'목록 형식을 확인해 주세요.':error.message}finally{button.disabled=false}};
 
