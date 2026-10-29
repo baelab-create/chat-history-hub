@@ -53,6 +53,26 @@ CSP may block user bookmark execution; no bypass is attempted. Live signed-in
 ChatGPT bookmark execution is unverified. Keep the extension path available.
 Rebuild with node scripts/package-bookmark.mjs; CI checks generated-source parity.
 
+## Full first-install distribution (1.4.1)
+
+setup/chat-history-hub-1.4.1.zip is a complete, versioned package for a fresh
+Chrome installation on either Windows or macOS. The existing unversioned download
+is the same package. No prior installation or patch files are needed. Each ZIP
+contains the whole extension directory, toolbar popup/icons and INSTALL-KO.txt.
+The install page leads with fresh installation; updates are a collapsed alternative.
+
+Users extract, move the folder to a permanent location, then load that folder in
+chrome://extensions with developer mode. They repeat that registration per PC and
+Chrome profile. The toolbar popup only opens Hub/help; it performs no collection.
+Use the same Hub Google account to load shared encrypted records, and the same
+ChatGPT account/workspace to collect the same history. No local task bodies sync.
+
+The builder validates every declared manifest entry, relative JS import and local
+HTML asset before creating both ZIPs. It checks icon PNG dimensions, guide/popup
+version and exact packaged-source parity in CI. This release changes packaging and
+onboarding; it does not claim live signed-in capture or native installation tests.
+The quick-refresh protocol still accepts extension 1.4.0.
+
 ## Updating the installed extension
 
 GitHub Pages deployment does not update an unpacked extension on a user's PC.

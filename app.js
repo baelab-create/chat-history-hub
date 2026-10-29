@@ -197,7 +197,7 @@ function showConnectionHelp(code){
  const setup=code==='EXTENSION_MISSING'||code==='EXTENSION_UPDATE';
  $('connection-help').hidden=false;
  $('connection-title').textContent=setup?'최신화 연결을 한 번 설정해 주세요':'ChatGPT 연결을 확인해 주세요';
- $('connection-message').textContent=setup?'Chrome에 확장 프로그램 1.4.0을 설치하거나 업데이트한 뒤 이 페이지를 새로고침하세요. 이후에는 최신화 버튼만 누르면 됩니다.':'같은 Chrome의 ChatGPT에 로그인되어 있어야 합니다. 로그인이나 화면 확인을 마친 뒤 최신화를 다시 눌러 주세요.';
+ $('connection-message').textContent=setup?'Chrome에 확장 프로그램 1.4.1을 설치하거나 업데이트한 뒤 이 페이지를 새로고침하세요. 이후에는 최신화 버튼만 누르면 됩니다.':'같은 Chrome의 ChatGPT에 로그인되어 있어야 합니다. 로그인이나 화면 확인을 마친 뒤 최신화를 다시 눌러 주세요.';
  $('connection-action').textContent=setup?'설치·업데이트 안내':'ChatGPT 열기';
  $('connection-action').href=setup?'./setup/browser.html':'https://chatgpt.com/';
 }

@@ -1,8 +1,43 @@
 {
- "manifest_version":3,"name":"Chat History Hub — 대화 목록","version":"1.4.0",
- "description":"Hub에서 최신화를 누르면 ChatGPT 최근 대화의 제목·링크·확인 가능한 날짜를 가져옵니다.",
- "permissions":["scripting","storage"],
- "host_permissions":["https://chatgpt.com/*","https://baelab-create.github.io/*"],
- "background":{"service_worker":"background.js","type":"module"},
- "content_scripts":[{"matches":["https://baelab-create.github.io/chat-history-hub/*"],"js":["bridge.js"],"run_at":"document_start"}]
+  "manifest_version": 3,
+  "name": "Chat History Hub — 대화 목록",
+  "version": "1.4.1",
+  "description": "Hub에서 최신화를 누르면 ChatGPT 최근 대화의 제목·링크·확인 가능한 날짜를 가져옵니다.",
+  "permissions": [
+    "scripting",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://chatgpt.com/*",
+    "https://baelab-create.github.io/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://baelab-create.github.io/chat-history-hub/*"
+      ],
+      "js": [
+        "bridge.js"
+      ],
+      "run_at": "document_start"
+    }
+  ],
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "action": {
+    "default_title": "Chat History Hub — 내 대화 목록",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png"
+    }
+  }
 }
