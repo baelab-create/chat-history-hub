@@ -1,3 +1,46 @@
+## Gemini integration (1.5.0)
+
+The same extension now collects ChatGPT, Gemini, or both from the Hub's service
+selector and explicit refresh button. Existing ChatGPT-only requests still work
+with extension 1.4.x; Gemini/all requests require 1.5.0. The ChatGPT date reader
+and quick-capture implementation remain unchanged.
+
+Gemini capture opens its own inactive home tab with a random marker. A MAIN-world
+`document_start` content script is inert in ordinary tabs; only the marked home
+tab observes Gemini's own MaZiqc list responses for up to 60 seconds. It does not
+send internal API requests, read cookies/tokens, open conversations, or collect
+message bodies. It validates JSON RPC frames, list field [2], IDs, titles and
+last-activity timestamps at record field [5], without regex-guessing a time from
+nearby message text. The marker is removed, hooks are restored, and collected
+metadata is cleared on completion/cancellation/expiry. User-visited, navigated,
+and login tabs are retained. Gemini uses the browser's default Google account.
+
+Only already-loaded list metadata is accumulated, not a guaranteed full history.
+Missing timestamps remain unknown and creation dates are never inferred. Gemini
+records have distinct IDs, canonical links and separate ordering cohorts. Both
+providers use the existing encrypted cache, shared store and durable retry queue.
+An all-services refresh retains successful results when the other provider fails
+and displays which provider needs attention. The ChatGPT history-review and
+export-import tools remain ChatGPT-specific.
+
+Protocol/schema research references:
+- https://greasyfork.org/en/scripts/569914-gemini-show-conversation-date-on-sidebar/code
+- https://github.com/EricAndrechek/gemini-usage/blob/main/_docs/GEMINI_API_INTERNALS.md
+- https://developer.chrome.com/docs/extensions/reference/manifest/content-scripts
+
+The new collector is an original implementation using the documented list shape;
+it does not embed the referenced userscript or its UI. Verification covers the
+real capture script in a synthetic XHR/fetch environment, owned-tab lifecycle,
+protocol version gating, mixed-provider encrypted round trips and the actual Hub
+HTML/JS with mocked Chrome/account/cloud services. Live capture in a signed-in
+Gemini account has not been verified in this environment. ChatGPT operation was
+reported successful by the user before this release.
+
+Download: [Complete 1.5.0 package](setup/chat-history-hub-1.5.0.zip).
+Each PC needs the updated unpacked folder reloaded once and Gemini site access
+allowed. Fresh installations need only this complete package. Instructions are
+in `setup/browser.html` and the included `INSTALL-KO.txt`.
+
 # Chat History Hub — manual collection
 
 Collection starts only from the user's explicit action. Keep the old scheduled task,

@@ -1,5 +1,5 @@
 import {decryptDevice,encryptDevice} from './device-crypto.mjs?v=7';
-import {accumulateDevice} from './collector/metadata.mjs?v=15';
+import {accumulateDevice} from './collector/metadata.mjs?v=18';
 // A second collection must not overwrite an earlier failed upload.
 export async function mergePendingEnvelopes(previous,incoming,recipient){
  const list=value=>value?(Array.isArray(value)?value:[value]):[];

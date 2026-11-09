@@ -47,11 +47,11 @@ test('sidebar preparation only opens recognized controls and never clicks login 
 });
 
 const background=(await readFile(new URL('../extension/background.js',import.meta.url),'utf8')).replace(/^import .*;\n/gm,'');
-function worker(){
+function worker({geminiError=false}={}){
  const storage={},sent=[],created=[];let receive,release;
  const chrome={runtime:{id:'ext',getManifest:()=>({version:'1.4.0'}),getURL:p=>'chrome-extension://ext/'+p,onMessage:{addListener:f=>receive=f}},storage:{session:{get:async key=>key===null?{...storage}:{[key]:storage[key]},set:async v=>Object.assign(storage,v),remove:async key=>{delete storage[key]}}},tabs:{get:async()=>({url:'https://baelab-create.github.io/chat-history-hub/'}),create:async options=>{created.push(options);return {id:3}},sendMessage:async(tab,message)=>sent.push({tab,message}),onRemoved:{addListener(){}}}};
  const fakeQuick=async options=>{await options.check();await options.progress('reading');await new Promise(r=>release=r);await options.check();return {items:[]};};
- vm.runInNewContext(background,{chrome,quickSync:fakeQuick,inspectSidebar,readReactDates,withReactDates,Date,Error});
+ vm.runInNewContext(background,{chrome,quickGeminiSync:async()=>{if(geminiError)throw Object.assign(Error('Gemini login'),{code:'LOGIN_REQUIRED'});return {items:[{id:'0123456789abcdef'}]};},quickSync:fakeQuick,inspectSidebar,readReactDates,withReactDates,Date,Error});
  const sender={id:'ext',url:'https://baelab-create.github.io/chat-history-hub/',frameId:0,tab:{id:1}};
  const call=(type,extra={},who=sender)=>new Promise(resolve=>receive({type,id,...extra},who,resolve));
  return {call,sent,created,storage,release:()=>release(),ready:()=>Boolean(release)};
@@ -66,4 +66,13 @@ test('worker cancellation suppresses the result; probing cannot collect; review 
  const f=worker();assert.equal((await f.call('ping')).version,'1.4.0');assert.equal(f.ready(),false);
  const promise=f.call('begin',{mode:'quick'});await until(f.ready);await f.call('abort');f.release();assert.equal((await promise).ok,false);assert.equal(f.sent.some(s=>s.message.type==='result'),false);
  const review=await f.call('begin',{mode:'review'});assert.equal(review.ok,true);assert.match(f.created[0].url,/review.html/);
+});
+
+test('all-services worker preserves ChatGPT when Gemini login fails and reports partial result',async()=>{
+ const f=worker({geminiError:true}),promise=f.call('begin',{mode:'quick',service:'all'});await until(f.ready);f.release();assert.equal((await promise).ok,true);
+ const snapshot=f.sent.find(s=>s.message.type==='result').message.snapshot;assert.equal(snapshot.version,3);assert.equal(snapshot.service,'all');assert.equal(snapshot.errors[0].service,'gemini');assert.equal(snapshot.errors[0].code,'LOGIN_REQUIRED');
+});
+test('Gemini-only worker never invokes ChatGPT collection',async()=>{
+ const f=worker();assert.equal((await f.call('begin',{mode:'quick',service:'gemini'})).ok,true);assert.equal(f.ready(),false);
+ const s=f.sent.find(s=>s.message.type==='result').message.snapshot;assert.equal(s.items[0].kind,'gemini');assert.equal(s.errors.length,0);
 });

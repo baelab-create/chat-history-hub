@@ -8,17 +8,21 @@ export function normalizeSnapshot(input) {
   }
   const unique = new Map();
   for (const value of input.items) {
-    if (!idPattern.test(value?.id) || typeof value.title !== 'string' || !value.title.trim() ||
+    if (!(value?.kind==='gemini'?/^gemini-[a-zA-Z0-9_-]{10,80}$/:idPattern).test(value?.id) || typeof value.title !== 'string' || !value.title.trim() ||
         value.title.length > 1000 || !(['browser-sidebar','chatgpt-export'].includes(input.source)&&value.updatedAt===null) && (!Number.isFinite(value.updatedAt) || value.updatedAt <= 0 || value.updatedAt > Date.now() / 1000 + 86400) || typeof value.archived !== 'boolean') throw Error('Invalid title record');
-    const kind=value.kind||'codex';if(!['codex','chatgpt'].includes(kind))throw Error('Invalid source kind');
+    const kind=value.kind||'codex';if(!['codex','chatgpt','gemini'].includes(kind))throw Error('Invalid source kind');
     const item = {id: value.id, kind, title: value.title.trim(), updatedAt: value.updatedAt, archived: value.archived, project:typeof value.project==='string'?value.project.slice(0,300):'프로젝트 없음'};
+    if(kind==='gemini'){
+      if(input.source!=='browser-sidebar'||value.webUrl!=='https://gemini.google.com/app/'+value.id.slice(7))throw Error('Invalid Gemini metadata');
+      item.webUrl=value.webUrl;
+    }
     if(value.createdAt!==undefined&&value.createdAt!==null){
       if(!Number.isFinite(value.createdAt)||value.createdAt<=0||value.createdAt>Date.now()/1000+86400)throw Error('Invalid creation date');
       item.createdAt=value.createdAt;
     }
     if(input.source==='chatgpt-export'&&(kind!=='chatgpt'||(!item.createdAt&&!item.updatedAt)))throw Error('Invalid export metadata');
     if(input.source==='browser-sidebar'){
-      if(kind!=='chatgpt'||!(value.sidebarRank===null||Number.isInteger(value.sidebarRank)&&value.sidebarRank>=0&&value.sidebarRank<50000)||typeof value.pinned!=='boolean'||!validTime(value.browserObservedAt))throw Error('Invalid browser metadata');
+      if(!['chatgpt','gemini'].includes(kind)||!(value.sidebarRank===null||Number.isInteger(value.sidebarRank)&&value.sidebarRank>=0&&value.sidebarRank<50000)||typeof value.pinned!=='boolean'||!validTime(value.browserObservedAt))throw Error('Invalid browser metadata');
       Object.assign(item,{sidebarRank:value.sidebarRank,pinned:value.pinned,browserObservedAt:value.browserObservedAt});
       if(value.lastMessageAt!==undefined&&value.lastMessageAt!==null){
         if(!Number.isFinite(value.lastMessageAt)||value.lastMessageAt<946684800||value.lastMessageAt>Date.now()/1000+60)throw Error('Invalid observed message date');

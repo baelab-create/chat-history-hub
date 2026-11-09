@@ -1,8 +1,8 @@
 export function collectionStatus(catalog,snapshots=[],now=Date.now()){
  const validTime=value=>{const n=Date.parse(value);return Number.isFinite(n)&&n<=now+60000?n:null};
- const candidates=[catalog?.items?.some(i=>i.kind==='chatgpt')?validTime(catalog.collectedAt):null,...snapshots.filter(d=>d.items?.some(i=>i.kind==='chatgpt')).map(d=>validTime(d.cloudObservedAt))].filter(n=>n!==null);
+ const candidates=[catalog?.items?.some(i=>['chatgpt','gemini'].includes(i.kind))?validTime(catalog.collectedAt):null,...snapshots.filter(d=>d.items?.some(i=>['chatgpt','gemini'].includes(i.kind))).map(d=>validTime(d.cloudObservedAt))].filter(n=>n!==null);
  const devices=snapshots.map(d=>({
-  deviceId:d.deviceId,deviceName:d.deviceName,localCount:d.items.filter(i=>i.kind==='codex').length,webCount:d.items.filter(i=>i.kind==='chatgpt').length,
+  deviceId:d.deviceId,deviceName:d.deviceName,localCount:d.items.filter(i=>i.kind==='codex').length,webCount:d.items.filter(i=>i.kind==='chatgpt').length,geminiCount:d.items.filter(i=>i.kind==='gemini').length,
   observedAt:d.observedAt,cloudObservedAt:d.cloudObservedAt||null,automatic:d.cloudMode==='app-bridge',
   connected:d.cloudMode==='app-bridge'&&d.cloudState==='connected'&&validTime(d.cloudObservedAt)!==null&&now-Date.parse(d.cloudObservedAt)<15*60000,
   stale:validTime(d.observedAt)===null||now-Date.parse(d.observedAt)>15*60000

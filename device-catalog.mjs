@@ -1,13 +1,13 @@
-import {normalizeSnapshot, accumulateDevice} from './collector/metadata.mjs?v=15';
+import {normalizeSnapshot, accumulateDevice} from './collector/metadata.mjs?v=18';
 export function mergeCatalogs(legacy, snapshots) {
   const map=new Map();
-  const key=t=>(t.kind==='chatgpt'?'chatgpt':'codex')+':'+t.id;
+  const key=t=>(t.kind||'codex')+':'+t.id;
   for(const t of legacy)map.set(key(t),{...t,devices:['legacy-desktop']});
   for(const raw of snapshots){
     const snapshot=normalizeSnapshot(raw);
     for(const t of snapshot.items){
       const old=map.get(key(t));
-      const next={...t,webUrl:t.kind==='chatgpt'?'https://chatgpt.com/c/'+t.id:undefined};
+      const next={...t,webUrl:t.kind==='chatgpt'?'https://chatgpt.com/c/'+t.id:t.kind==='gemini'?t.webUrl:undefined};
       const createdAt=Math.min(old?.createdAt||Infinity,t.createdAt||Infinity);
       const lastMessageAt=Math.max(old?.lastMessageAt||0,t.lastMessageAt||0);
       if(Number.isFinite(createdAt))next.createdAt=createdAt;

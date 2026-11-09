@@ -1,3 +1,4 @@
+import {quickGeminiSync} from './gemini-sync.js';
 import {quickSync} from './quick-sync.js';
 import {inspectSidebar} from './collector.js';
 import {readReactDates,withReactDates} from './react-dates.js';
@@ -19,7 +20,16 @@ chrome.runtime.onMessage.addListener((m,sender,reply)=>{
      const hub=await chrome.tabs.get(sender.tab.id);if(!allowedHub(hub.url))throw Error('대화 목록 페이지가 닫혔습니다.');
     };
     try{
-     const snapshot=await quickSync({chrome,hubTab:sender.tab,check,progress:message=>chrome.tabs.sendMessage(sender.tab.id,{type:'progress',id:m.id,message})});
+     const service=m.service||'chatgpt';
+     if(!['chatgpt','gemini','all'].includes(service))throw Error('지원하지 않는 서비스입니다.');
+     const services=service==='all'?['chatgpt','gemini']:[service],parts=[],errors=[];
+     for(const provider of services){
+      await check();
+      try{const part=await (provider==='gemini'?quickGeminiSync:quickSync)({chrome,hubTab:sender.tab,check,progress:message=>chrome.tabs.sendMessage(sender.tab.id,{type:'progress',id:m.id,message})});parts.push({...part,service:provider})}
+      catch(e){await check();errors.push({service:provider,code:e.code||'PAGE_UNAVAILABLE',error:String(e.message).slice(0,300)})}
+     }
+     if(!parts.length)throw Object.assign(Error(errors.map(e=>e.error).join(' ')),{code:errors[0].code,service:errors[0].service});
+     const snapshot=service==='chatgpt'?parts[0]:{version:3,service,coverage:'loaded-sidebar-only',observedAt:new Date().toISOString(),items:parts.flatMap(p=>p.items.map(row=>({...row,kind:p.service}))),errors};
      await check();await chrome.tabs.sendMessage(sender.tab.id,{type:'result',id:m.id,snapshot});return {ok:true};
     }finally{await chrome.storage.session.remove(key);}
    }
@@ -46,7 +56,7 @@ chrome.runtime.onMessage.addListener((m,sender,reply)=>{
    await chrome.tabs.update(request.hubTab,{active:true});return {ok:true};
   }
   throw Error('지원하지 않는 요청입니다.');
- })().then(data=>reply({ok:true,...data})).catch(e=>reply({ok:false,error:e.message,code:e.code}));return true;
+ })().then(data=>reply({ok:true,...data})).catch(e=>reply({ok:false,error:e.message,code:e.code,service:e.service}));return true;
 });
 // Closing review must release Hub immediately, rather than waiting 30 minutes.
 chrome.tabs.onRemoved.addListener(tabId=>{

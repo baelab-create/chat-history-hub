@@ -39,3 +39,13 @@ test('review mode is opt-in and typed connection errors reach the UI',async()=>{
 test('1.3 extension requires update before quick refresh can start',async()=>{
  const f=connectionFixture();try{const promise=requestBrowserSnapshot();f.emit({type:'ready',version:'1.3.0'});await assert.rejects(promise,e=>e.code==='EXTENSION_UPDATE');assert.equal(f.sent.length,1)}finally{f.close()}
 });
+
+test('Gemini requires 1.5 while ChatGPT stays compatible; chosen service is transmitted',async()=>{
+ for(const service of ['gemini','all']){
+  let f=connectionFixture();try{const result=requestBrowserSnapshot({service});f.emit({type:'ready',version:'1.4.1'});await assert.rejects(result,e=>e.code==='EXTENSION_UPDATE');assert.equal(f.sent.length,1)}finally{f.close()}
+  f=connectionFixture();try{const result=requestBrowserSnapshot({service});f.emit({type:'ready',version:'1.5.0'});assert.equal(f.sent.at(-1).service,service);f.emit({type:'result',snapshot:{service}});assert.equal((await result).service,service)}finally{f.close()}
+ }
+});
+test('provider-specific login error survives the browser bridge',async()=>{
+ const f=connectionFixture();try{const result=requestBrowserSnapshot({service:'gemini'});f.emit({type:'ready',version:'1.5.0'});f.emit({type:'error',code:'LOGIN_REQUIRED',service:'gemini',error:'Sign in'});await assert.rejects(result,e=>e.service==='gemini'&&e.code==='LOGIN_REQUIRED')}finally{f.close()}
+});

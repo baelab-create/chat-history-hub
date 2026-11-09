@@ -1,15 +1,16 @@
 {
   "manifest_version": 3,
   "name": "Chat History Hub — 대화 목록",
-  "version": "1.4.1",
-  "description": "Hub에서 최신화를 누르면 ChatGPT 최근 대화의 제목·링크·확인 가능한 날짜를 가져옵니다.",
+  "version": "1.5.0",
+  "description": "Hub의 최신화 버튼으로 ChatGPT와 Gemini 최근 대화의 제목·링크·확인 가능한 날짜를 가져옵니다.",
   "permissions": [
     "scripting",
     "storage"
   ],
   "host_permissions": [
     "https://chatgpt.com/*",
-    "https://baelab-create.github.io/*"
+    "https://baelab-create.github.io/*",
+    "https://gemini.google.com/*"
   ],
   "background": {
     "service_worker": "background.js",
@@ -24,6 +25,17 @@
         "bridge.js"
       ],
       "run_at": "document_start"
+    },
+    {
+      "matches": [
+        "https://gemini.google.com/*"
+      ],
+      "js": [
+        "gemini-capture.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN",
+      "all_frames": false
     }
   ],
   "icons": {

@@ -13,7 +13,7 @@
   if(m.type==='abort'&&pending.has(m.id)){pending.delete(m.id);chrome.runtime.sendMessage({type:'abort',id:m.id}).catch(()=>{});return;}
   if(m.type!=='collect'||pending.size)return;
   pending.add(m.id);
-  chrome.runtime.sendMessage({type:'begin',id:m.id,mode:m.mode==='quick'?'quick':'review'}).then(r=>{if(!r?.ok)throw Object.assign(Error(r?.error||'확장 프로그램을 다시 연결하려면 페이지를 새로고침해 주세요.'),{code:r?.code});}).catch(error=>{pending.delete(m.id);window.postMessage({channel:'hub-browser-response-v1',id:m.id,type:'error',error:error.message,code:error.code},location.origin)});
+  chrome.runtime.sendMessage({type:'begin',id:m.id,mode:m.mode==='quick'?'quick':'review',service:m.service||'chatgpt'}).then(r=>{if(!r?.ok)throw Object.assign(Error(r?.error||'확장 프로그램을 다시 연결하려면 페이지를 새로고침해 주세요.'),{code:r?.code,service:r?.service});}).catch(error=>{pending.delete(m.id);window.postMessage({channel:'hub-browser-response-v1',id:m.id,type:'error',error:error.message,code:error.code,service:error.service},location.origin)});
   setTimeout(()=>pending.delete(m.id),1800000);
  });
  chrome.runtime.onMessage.addListener(m=>{

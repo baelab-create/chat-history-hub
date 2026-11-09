@@ -1,16 +1,16 @@
 import {conversationDate} from './conversation-date.mjs?v=15';
 import {readExportFile,exportSnapshot} from './export-import.mjs?v=14';
-import {readBookmarkImport,decodeBookmarkImport,clearBookmarkImport} from './bookmark-import.mjs?v=15';
+import {readBookmarkImport,decodeBookmarkImport,clearBookmarkImport} from './bookmark-import.mjs?v=18';
 import {encryptedStore} from './archive-storage.mjs?v=12';
-import {mergePendingEnvelopes} from './share-queue.mjs?v=15';
-import {arrangeConversations,conversationGroup} from './conversation-order.mjs?v=11';
+import {mergePendingEnvelopes} from './share-queue.mjs?v=18';
+import {arrangeConversations,conversationGroup} from './conversation-order.mjs?v=18';
 import {splitBrowserArchive} from './browser-archive.mjs?v=14';
-import {mergeCatalogs} from './device-catalog.mjs?v=15';
-import {collectionStatus} from './sync-status.mjs?v=7';
-import {refreshDevices,deviceSnapshots,acceptDeviceEnvelope} from './devices.js?v=15';
+import {mergeCatalogs} from './device-catalog.mjs?v=18';
+import {collectionStatus} from './sync-status.mjs?v=18';
+import {refreshDevices,deviceSnapshots,acceptDeviceEnvelope} from './devices.js?v=18';
 import {unlockCatalog,loadTitles,saveTitles,refreshCatalog} from './vault.js?v=7';
-import {loadCloudDevices,saveCloudDevice} from './cloud-devices.js?v=15';
-import {requestBrowserSnapshot,browserSnapshot,probeBrowserExtension} from './browser-client.mjs?v=16';
+import {loadCloudDevices,saveCloudDevice} from './cloud-devices.js?v=18';
+import {requestBrowserSnapshot,browserSnapshot,probeBrowserExtension} from './browser-client.mjs?v=18';
 import {deviceRecipient} from './vault.js?v=7';
 import {encryptDevice} from './device-crypto.mjs?v=7';
 import {createRenderGate} from './render-guard.mjs?v=7';
@@ -24,16 +24,17 @@ let items=[];
 let baseItems=[],extraItems=[],catalogInfo={},pendingCatalog=null;
 let refreshBusy=false,lastRefreshAttempt=0,refreshFailed=false;
 let selectedService='all';
-const serviceNames={chatgpt:'ChatGPT',codex:'로컬 작업'};
+const serviceNames={chatgpt:'ChatGPT',gemini:'Gemini',codex:'로컬 작업'};
 const serviceOf=t=>['gemini','claude','codex'].includes(t.kind)?t.kind:'chatgpt';
 const extraStorage='chat-history-hub:extra-catalog:v1';
 let extraReady=true;
 function updateServices(){
  $('services').replaceChildren();
  for(const [id,name] of [['all','전체'],...Object.entries(serviceNames)]){
- const button=el('button','',name+' '+items.filter(t=>id==='all'||serviceOf(t)===id).length);button.type='button';button.setAttribute('aria-pressed',String(selectedService===id));button.onclick=()=>{selectedService=id;$('project').value='';updateServices();render()};$('services').append(button);
+ const button=el('button','',name+' '+items.filter(t=>id==='all'||serviceOf(t)===id).length);button.type='button';button.setAttribute('aria-pressed',String(selectedService===id));button.disabled=manualBusy;button.onclick=()=>{if(manualBusy)return;selectedService=id;$('project').value='';updateServices();render()};$('services').append(button);
  }
  $('total').textContent=items.length;
+ $('sync-caption').textContent=selectedService==='codex'?'로컬 작업은 저장된 목록을 다시 불러옵니다.':(selectedService==='all'?'ChatGPT와 Gemini':serviceNames[selectedService])+'의 최근 대화를 최신화합니다.';
 }
 function normalizeExtra(t){
  if(!t||!['gemini','claude'].includes(t.kind)||typeof t.title!=='string'||!t.title.trim())throw Error('목록의 서비스 또는 제목을 확인해 주세요.');
@@ -47,7 +48,7 @@ const displayTitle=t=>Object.hasOwn(titles,t.id)?titles[t.id]:t.title;
 function editTitle(t,content){
  const form=el('form','title-editor');const input=el('input');input.value=displayTitle(t);input.maxLength=300;input.required=true;input.setAttribute('aria-label','대화 제목 수정');
  const buttons=el('div','title-editor-actions');const save=el('button','','저장');save.type='submit';const cancel=el('button','','취소');cancel.type='button';const restore=el('button','','원래 제목');restore.type='button';
- const hint=el('p','edit-hint','이 브라우저에만 저장됩니다. ChatGPT 원본 제목은 바뀌지 않습니다.');const status=el('p','edit-status');status.setAttribute('role','status');
+ const hint=el('p','edit-hint','이 브라우저에만 저장됩니다. 원래 서비스의 제목은 바뀌지 않습니다.');const status=el('p','edit-status');status.setAttribute('role','status');
  buttons.append(save,cancel,restore);form.append(input,buttons,hint,status);content.replaceWith(form);input.focus();input.select();
  const outsideListener=new AbortController();
  const close=(returnFocus=true)=>{if(input.disabled)return;outsideListener.abort();form.replaceWith(content);if(returnFocus)content.focus();if(pendingCatalog)applyPendingCatalog()};
@@ -70,23 +71,24 @@ function render(){
  const dateLabel=dateBasis==='created'?'대화 시작일':dateBasis==='updated'?'마지막 수정일':'확인된 대화 날짜';
  const dateOf=t=>conversationDate(t,dateBasis).timestamp;
  $('date-hint').textContent=dateLabel+' · 한국 시간';
- const newestBrowser=items.reduce((latest,t)=>t.browserObservedAt>latest?t.browserObservedAt:latest,'');
+ const newestByService=new Map();for(const t of items)if(t.browserObservedAt&&t.browserObservedAt>(newestByService.get(t.kind)||''))newestByService.set(t.kind,t.browserObservedAt);
+ const newestBrowser=newestByService.size>0;
  const recent=$('sort').value==='recent'&&!q;
  const chromeOrder=$('sort').value==='browser';
  const sourceRows=chromeOrder?arrangeConversations(items):items;
- const rows=sourceRows.filter(t=>(!recent||(t.browserObservedAt===newestBrowser&&(t.sidebarRank!==null||t.pinned)))&&(!$('device').value||t.devices?.some(id=>id===$('device').value||deviceSnapshots().find(s=>s.deviceId===id)?.archiveDeviceId===$('device').value))&&(selectedService==='all'||serviceOf(t)===selectedService)&&(!q||displayTitle(t).toLocaleLowerCase('ko').includes(q))&&(!project||t.project===project)&&(!(from||to)||dateOf(t)!==null)&&(!from||dateFormat.format(new Date(dateOf(t)*1000))>=from)&&(!to||dateFormat.format(new Date(dateOf(t)*1000))<=to)).sort((a,b)=>{if(chromeOrder)return 0;if(recent)return (a.sidebarRank??10000)-(b.sidebarRank??10000);const aDate=dateOf(a),bDate=dateOf(b);if(aDate===null)return bDate===null?0:1;if(bDate===null)return -1;return ($('sort').value==='asc'?1:-1)*(aDate-bDate)});
+ const rows=sourceRows.filter(t=>(!recent||(t.browserObservedAt===newestByService.get(t.kind)&&(t.sidebarRank!==null||t.pinned)))&&(!$('device').value||t.devices?.some(id=>id===$('device').value||deviceSnapshots().find(s=>s.deviceId===id)?.archiveDeviceId===$('device').value))&&(selectedService==='all'||serviceOf(t)===selectedService)&&(!q||displayTitle(t).toLocaleLowerCase('ko').includes(q))&&(!project||t.project===project)&&(!(from||to)||dateOf(t)!==null)&&(!from||dateFormat.format(new Date(dateOf(t)*1000))>=from)&&(!to||dateFormat.format(new Date(dateOf(t)*1000))<=to)).sort((a,b)=>{if(chromeOrder)return 0;if(recent)return (a.sidebarRank??10000)-(b.sidebarRank??10000);const aDate=dateOf(a),bDate=dateOf(b);if(aDate===null)return bDate===null?0:1;if(bDate===null)return -1;return ($('sort').value==='asc'?1:-1)*(aDate-bDate)});
  $('service-note').textContent=(chromeOrder?'Chrome에서 확인한 순서입니다. ':'')+'제목을 누르면 원래 대화가 열립니다. 로컬 작업은 해당 작업이 있는 PC에서 열 수 있습니다.';
  const unknown=items.filter(t=>(selectedService==='all'||serviceOf(t)===selectedService)&&dateOf(t)===null).length;
  $('date-help').hidden=unknown===0;$('date-help-count').textContent=`날짜 미확인 ${unknown}개 · 안내 보기`;
  $('date-filter-note').textContent=(from||to)&&unknown?`날짜가 없는 ${unknown}개는 날짜 범위 검색에서 제외됩니다.`:'';
  $('count').textContent=rows.length+'개 대화';$('results').replaceChildren();
  if(from&&to&&from>to){$('results').append(el('div','empty','시작일을 종료일 이전으로 선택해 주세요.'));return}
- if(recent&&!newestBrowser){$('results').append(el('div','empty','최신화를 눌러 ChatGPT 최근 목록을 가져와 주세요.'));return;}
+ if(recent&&!newestBrowser){$('results').append(el('div','empty','최신화를 눌러 선택한 서비스의 최근 목록을 가져와 주세요.'));return;}
  if(!rows.length){$('results').append(el('div','empty',items.some(t=>selectedService==='all'||serviceOf(t)===selectedService)?'검색 결과가 없습니다.':'아직 가져온 대화가 없습니다.'));return}
  let previousDay,group;
  for(const t of rows){
   const day=chromeOrder?(dateBasis==='updated'?conversationGroup(t):dateOf(t)===null?dateLabel+' 미확인 · Chrome 순서 유지':dateFormat.format(new Date(dateOf(t)*1000))):recent?'recent':dateOf(t)===null?'unknown':dateFormat.format(new Date(dateOf(t)*1000));
-  if(day!==previousDay){const section=el('section','day-group');section.append(el('h2','day-heading',chromeOrder?day:day==='recent'?'최근 가져온 ChatGPT 대화':day==='unknown'?dateLabel+' 미확인':new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',year:'numeric',month:'long',day:'numeric',weekday:'long'}).format(new Date(dateOf(t)*1000))));group=el('div','rows');group.setAttribute('role','list');section.append(group);$('results').append(section);previousDay=day}
+  if(day!==previousDay){const section=el('section','day-group');section.append(el('h2','day-heading',chromeOrder?day:day==='recent'?'최근 가져온 대화':day==='unknown'?dateLabel+' 미확인':new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',year:'numeric',month:'long',day:'numeric',weekday:'long'}).format(new Date(dateOf(t)*1000))));group=el('div','rows');group.setAttribute('role','list');section.append(group);$('results').append(section);previousDay=day}
   const web=t.webUrl&&validUrl(t.webUrl,'web');
   const localUrl='codex://threads/'+t.id,local=t.kind==='codex'&&currentDeviceId&&t.devices?.includes(currentDeviceId)&&validUrl(localUrl,'app');
   const row=el('div','row');row.setAttribute('role','listitem');const body=el('div');const content=el(web||local?'a':'span','title',displayTitle(t));
@@ -101,13 +103,13 @@ function render(){
 }
 function composeItems(){renderGate.request()}
 function composeItemsNow(){
- items=mergeCatalogs(baseItems,deviceSnapshots()).filter(t=>t.kind==='chatgpt'||t.kind==='codex');
+ items=mergeCatalogs(baseItems,deviceSnapshots()).filter(t=>['chatgpt','gemini','codex'].includes(t.kind));
  const selected=$('device').value;$('device').replaceChildren(new Option('모든 기기',''),new Option('데스크탑','legacy-desktop'));$('device-list').replaceChildren();
  const grouped=new Map();
  for(const raw of deviceSnapshots()){const key=raw.archiveDeviceId||raw.deviceId;const old=grouped.get(key);grouped.set(key,old?{...old,observedAt:raw.observedAt>old.observedAt?raw.observedAt:old.observedAt,cloudObservedAt:raw.cloudObservedAt>old.cloudObservedAt?raw.cloudObservedAt:old.cloudObservedAt,items:[...old.items,...raw.items]}:{...raw,deviceId:key});}
  for(const d of collectionStatus(catalogInfo,[...grouped.values()]).devices){
   $('device').add(new Option(d.deviceName,d.deviceId));
-  $('device-list').append(el('li','',d.deviceName+' · 저장된 ChatGPT '+d.webCount+'개 · 로컬 작업 '+d.localCount+'개 · 마지막 확인 '+new Date(d.cloudObservedAt||d.observedAt).toLocaleString('ko-KR')));
+  $('device-list').append(el('li','',d.deviceName+' · 저장된 ChatGPT '+d.webCount+'개 · Gemini '+d.geminiCount+'개 · 로컬 작업 '+d.localCount+'개 · 마지막 확인 '+new Date(d.cloudObservedAt||d.observedAt).toLocaleString('ko-KR')));
  }
  if([...$('device').options].some(o=>o.value===selected))$('device').value=selected;
  const project=$('project').value;$('project').replaceChildren(new Option('모든 프로젝트',''));
@@ -119,14 +121,15 @@ function applyCatalog(data){
  if(!Array.isArray(data.items)||!data.items.length||data.items.some(t=>typeof t.id!=='string'||typeof t.title!=='string'||!Number.isFinite(t.updatedAt)||Math.abs(t.updatedAt)>=8e12))throw Error('목록 형식이 올바르지 않습니다.');
  if(Date.parse(data.collectedAt)<Date.parse(catalogInfo.collectedAt))return;
  baseItems=[...new Map(data.items.map(t=>[t.id,{...t,project:typeof t.project==='string'?t.project:'프로젝트 없음'}])).values()];
- catalogInfo=data;$('coverage').textContent='확인된 날짜로 묶어 보여드립니다. ‘내 메시지 기준’은 열린 대화에서 불러온 내 메시지의 시각이며, 대화 전체의 수정일과 구분됩니다.';composeItems();updateSyncStatus();
+ catalogInfo=data;$('coverage').textContent='확인된 날짜로 묶어 보여드립니다. ‘내 메시지 기준’은 열린 대화에서 불러온 내 메시지의 시각이며, 대화 전체의 수정일과 구분됩니다. Gemini는 목록에 제공된 마지막 활동 시각을 사용하며 시작일은 추정하지 않습니다.';composeItems();updateSyncStatus();
 }
 function applyPendingCatalog(){if(!pendingCatalog){composeItems();return true;}const data=pendingCatalog;pendingCatalog=null;applyCatalog(data);return true}
 function updateSyncStatus(){
+ for(const button of document.querySelectorAll?.('#services button')||[])button.disabled=manualBusy||refreshBusy;
  const state=collectionStatus(catalogInfo,deviceSnapshots());
  const collected=Date.parse(state.cloudObservedAt);
  const date=Number.isFinite(collected)?new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',month:'long',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false}).format(collected):'확인 필요';
- $('last-collected').textContent='저장된 ChatGPT 마지막 확인 · '+date;
+ $('last-collected').textContent='저장된 대화 목록 마지막 확인 · '+date;
  $('sync-status').textContent=refreshBusy?'저장된 목록을 다시 불러오고 있습니다…':refreshFailed?'일부 저장된 목록에 연결하지 못했습니다. 마지막 정상 목록을 유지합니다.':'';
  $('sync-status').dataset.state=refreshFailed?'warning':'ok';
  $('manual-sync').setAttribute('aria-disabled',String(refreshBusy||manualBusy));
@@ -165,49 +168,54 @@ async function publishManual(envelope){
  await encryptedStore.remove(outboxKey);pendingArchive=null;
  $('retry-share').hidden=true;
 }
-async function collectBrowser(imported=null,mode='quick'){
+async function collectBrowser(imported=null,mode='quick',service='chatgpt'){
  try{
-  const [saved,collected]=await Promise.allSettled([checkForUpdates(true),imported?Promise.resolve(imported):requestBrowserSnapshot({signal:manualController.signal,mode,onReady:()=>{$('manual-status').textContent=mode==='review'?'열린 화면에서 ChatGPT 탭과 가져올 범위를 선택해 주세요.':'ChatGPT에서 최근 목록을 확인하고 있습니다…';},onProgress:message=>{$('manual-status').textContent=message;}})]);
+  const [saved,collected]=await Promise.allSettled([checkForUpdates(true),imported?Promise.resolve(imported):requestBrowserSnapshot({signal:manualController.signal,mode,service,onReady:()=>{$('manual-status').textContent=mode==='review'?'열린 화면에서 ChatGPT 탭과 가져올 범위를 선택해 주세요.':'선택한 서비스에서 최근 목록을 확인하고 있습니다…';},onProgress:message=>{$('manual-status').textContent=message;}})]);
   if(manualController.signal.aborted)throw Error('최신화를 취소했습니다.');
-  if(collected.status==='rejected')throw Object.assign(Error((saved.status==='fulfilled'&&!refreshFailed?'저장된 목록은 불러왔지만 새 대화는 가져오지 못했습니다. ':'저장된 목록과 새 대화를 모두 확인하지 못했습니다. 기존 목록을 유지합니다. ')+(collected.reason?.message||'')),{code:collected.reason?.code});
+  if(collected.status==='rejected')throw Object.assign(Error((saved.status==='fulfilled'&&!refreshFailed?'저장된 목록은 불러왔지만 새 대화는 가져오지 못했습니다. ':'저장된 목록과 새 대화를 모두 확인하지 못했습니다. 기존 목록을 유지합니다. ')+(collected.reason?.message||'')),{code:collected.reason?.code,service:collected.reason?.service});
   const key='chat-history-hub:browser-device';let id=localStorage.getItem(key);if(!id){id=crypto.randomUUID();localStorage.setItem(key,id)}
   if(!deviceRecipient)throw Error('이 브라우저에서 암호화를 준비하지 못했습니다. 최신 Chrome에서 다시 로그인해 주세요.');
   const snapshot=browserSnapshot(collected.value,id);
   const archive=await splitBrowserArchive(snapshot);
   const envelope=await Promise.all(archive.map(s=>encryptDevice(s,deviceRecipient.publicKey)));
   if(manualController.signal.aborted)throw Error('최신화를 취소했습니다.');
-  // Keep search/date filters; show the ChatGPT collection that was just refreshed.
-  selectedService='chatgpt';
+  // Keep search/date filters; display the service requested by this collection.
+  selectedService=imported?'chatgpt':collected.value.service||service;
   const cached=await Promise.allSettled(envelope.map(acceptDeviceEnvelope));
   const cacheFailed=cached.some(r=>r.status==='rejected');
   composeItems();updateSyncStatus();
+  if(manualController.signal.aborted)throw Error('최신화를 취소했습니다.');
   $('cancel-manual').hidden=true;$('manual-status').textContent='대화 목록을 가져왔습니다. 전체 검색을 위해 암호화 저장 중입니다…';
   try{await publishManual(envelope)}catch{throw Error('대화 목록은 가져왔지만 일부 공유 저장에 실패했습니다. 저장 다시 시도를 눌러 주세요.'+(cacheFailed?' 브라우저 저장 공간도 확인해 주세요. 이 탭을 닫지 마세요.':''))}
   if(imported){clearBookmarkImport();$('bookmark-panel').hidden=true;}
   $('manual-status').dataset.state='success';
-  $('manual-status').textContent=`최근 목록 ${snapshot.items.length}개 반영 · 날짜 ${snapshot.items.filter(t=>t.updatedAt||t.createdAt||t.lastMessageAt).length}개 확인 · 저장 완료`;
+  const counts=['chatgpt','gemini'].map(kind=>[kind,snapshot.items.filter(t=>t.kind===kind).length]).filter(([,n])=>n).map(([kind,n])=>serviceNames[kind]+' '+n+'개').join(' · ');
+  $('manual-status').textContent=`최근 목록 ${snapshot.items.length}개 반영 (${counts}) · 날짜 ${snapshot.items.filter(t=>t.updatedAt||t.createdAt||t.lastMessageAt).length}개 확인 · 저장 완료`;
+  const errors=collected.value.version===3&&Array.isArray(collected.value.errors)?collected.value.errors:[];
+  if(errors.length){$('manual-status').dataset.state='warning';$('manual-status').textContent+=' · 일부 가져오기 실패: '+errors.map(e=>(serviceNames[e.service]||'서비스')+' — '+String(e.error).slice(0,300)).join(' / ');showConnectionHelp(errors[0].code,errors[0].service);}
  }catch(e){
   $('manual-status').dataset.state='error';$('manual-status').textContent=e.message||'가져오기에 실패했습니다. 기존 목록은 유지합니다.';
-  showConnectionHelp(e.code);
+  showConnectionHelp(e.code,e.service||service);
  }
  finally{manualBusy=false;$('manual-sync').textContent='최신화';$('cancel-manual').hidden=true;updateSyncStatus()}
 }
-function showConnectionHelp(code){
- if(!['EXTENSION_MISSING','EXTENSION_UPDATE','LOGIN_REQUIRED','PAGE_UNAVAILABLE'].includes(code))return;
+function showConnectionHelp(code,service='chatgpt'){
+ if(!['EXTENSION_MISSING','EXTENSION_UPDATE','LOGIN_REQUIRED','PAGE_UNAVAILABLE','EMPTY_HISTORY'].includes(code))return;
+ const name=service==='gemini'?'Gemini':'ChatGPT';
  const setup=code==='EXTENSION_MISSING'||code==='EXTENSION_UPDATE';
  $('connection-help').hidden=false;
- $('connection-title').textContent=setup?'최신화 연결을 한 번 설정해 주세요':'ChatGPT 연결을 확인해 주세요';
- $('connection-message').textContent=setup?'Chrome에 확장 프로그램 1.4.1을 설치하거나 업데이트한 뒤 이 페이지를 새로고침하세요. 이후에는 최신화 버튼만 누르면 됩니다.':'같은 Chrome의 ChatGPT에 로그인되어 있어야 합니다. 로그인이나 화면 확인을 마친 뒤 최신화를 다시 눌러 주세요.';
- $('connection-action').textContent=setup?'설치·업데이트 안내':'ChatGPT 열기';
- $('connection-action').href=setup?'./setup/browser.html':'https://chatgpt.com/';
+ $('connection-title').textContent=setup?'최신화 연결을 한 번 설정해 주세요':name+' 연결을 확인해 주세요';
+ $('connection-message').textContent=setup?'Chrome에 확장 프로그램 1.5.0을 설치하거나 업데이트한 뒤 이 페이지를 새로고침하세요. 이후에는 최신화 버튼만 누르면 됩니다.':'같은 Chrome의 '+name+'에 로그인되어 있어야 합니다. 계정과 활동 기록을 확인한 뒤 최신화를 다시 눌러 주세요.';
+ $('connection-action').textContent=setup?'설치·업데이트 안내':name+' 열기';
+ $('connection-action').href=setup?'./setup/browser.html':service==='gemini'?'https://gemini.google.com/app':'https://chatgpt.com/';
 }
 function startCollection(mode='quick'){
  if(manualBusy||refreshBusy)return;
  manualBusy=true;manualController=new AbortController();$('manual-sync').textContent='최신화 중…';$('cancel-manual').hidden=false;
  $('connection-help').hidden=true;$('manual-status').dataset.state='';
- $('manual-status').textContent='최신화 연결을 확인하고 있습니다…';updateSyncStatus();void collectBrowser(null,mode);
+ $('manual-status').textContent='최신화 연결을 확인하고 있습니다…';updateSyncStatus();void collectBrowser(null,mode,mode==='review'?'chatgpt':['chatgpt','gemini'].includes(selectedService)?selectedService:'all');
 }
-$('manual-sync').onclick=e=>{e.preventDefault();startCollection()};
+$('manual-sync').onclick=e=>{e.preventDefault();if(selectedService==='codex'){if(!manualBusy)void checkForUpdates(true);return;}startCollection()};
 $('review-sync').onclick=()=>startCollection('review');
 $('dismiss-connection').onclick=()=>{$('connection-help').hidden=true;};
 $('cancel-manual').onclick=()=>manualController?.abort();
@@ -281,7 +289,7 @@ async function load(){try{
  try{const extra=await loadTitles(extraStorage);if(extra.items)extraItems=extra.items.map(normalizeExtra)}catch{extraReady=false;$('error').textContent='추가 목록을 불러오지 못했습니다. 저장된 목록을 보호하기 위해 가져오기를 중지했습니다.';$('error').hidden=false}
  applyCatalog(data);
  await checkForUpdates(true);
- if(deviceSnapshots().some(s=>s.source==='browser-sidebar')){selectedService='chatgpt';composeItems()}
+ if(deviceSnapshots().some(s=>s.source==='browser-sidebar')){selectedService=deviceSnapshots().some(s=>s.items.some(t=>t.kind==='gemini'))?'all':'chatgpt';composeItems()}
  try{pendingArchive=await encryptedStore.get(outboxKey)||null;$('retry-share').hidden=!pendingArchive;if(pendingArchive){for(const part of Array.isArray(pendingArchive)?pendingArchive:[pendingArchive])await acceptDeviceEnvelope(part);composeItems();updateSyncStatus();$('manual-status').textContent='이전에 공유하지 못한 목록이 남아 있습니다. 저장 다시 시도를 눌러 주세요.'}}catch{$('manual-status').textContent='이전에 저장한 목록을 읽지 못했습니다. 브라우저 저장 공간을 확인해 주세요.'}
  await prepareBookmark();
  // Paused after reported interference with normal PC input.
